@@ -74,6 +74,7 @@ h1{
     font-size:15px;
     cursor:pointer;
     margin-bottom:10px;
+    display:block;
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
@@ -139,14 +140,14 @@ h1{
     <div class="card">
         <h3>编码 文件转为PNG图片</h3>
         <input type="file" id="encFile" class="input-file-hidden">
-        <button class="btn-blue" id="btnSelectEnc">选择待编码文件</button>
+        <label for="encFile" class="btn-blue" id="btnSelectEnc">选择待编码文件</label>
         <button class="btn-blue" id="btnEncode">编码并下载PNG</button>
     </div>
 
     <div class="card">
         <h3>解码 PNG恢复原文件</h3>
         <input type="file" id="decFile" accept=".png" class="input-file-hidden">
-        <button class="btn-blue" id="btnSelectDec">选择PNG图片</button>
+        <label for="decFile" class="btn-blue" id="btnSelectDec">选择PNG图片</label>
         <button class="btn-blue" id="btnDecode">解码恢复文件</button>
     </div>
 
@@ -197,11 +198,6 @@ function truncName(name, maxLen=22){
     return name.slice(0, maxLen‑suffix.length‑2)+'…'+suffix;
 }
 
-//按钮唤起文件弹窗
-btnSelectEnc.onclick = ()=> encFile.click();
-btnSelectDec.onclick = ()=> decFile.click();
-
-//改用addEventListener，兼容性修复
 encFile.addEventListener('change', function(){
     if(this.files && this.files.length > 0){
         btnSelectEnc.textContent = truncName(this.files[0].name);
@@ -379,4 +375,5 @@ btnEncode.onclick=async ()=>{
         for(let i=0;i<total;i++){
             const x = i % side;
             const y = Math.floor(i / side);
-            con
+            const c = palette[bitStream[i]];
+            ctx.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
