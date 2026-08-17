@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LocalCipher 64色 standalone</title>
+<title>LocalCipher 16色 standalone</title>
 <style>
 *{
     margin:0;
@@ -83,7 +83,7 @@ h3{
 </head>
 <body>
 <div class="wrap">
-<h1>LocalCipher 64色(6bit)</h1>
+<h1>LocalCipher 16色(4bit)</h1>
 
 <div class="card">
 <h3>编码 文件→PNG</h3>
@@ -145,17 +145,17 @@ fileDec.onchange = function(){
     labDec.textContent = this.files.length? shortName(this.files[0].name):DEF_DEC;
 };
 
-// 64色调色板 i:0-63，R=i*4 G=0 B=0
+//16色调色板 i:0‑15，R=i*16 G=0 B=0
 function makePalette(){
     const p = [];
-    for(let i=0;i<64;i++){
-        p.push({r:i*4, g:0, b:0});
+    for(let i=0;i<16;i++){
+        p.push({r:i*16, g:0, b:0});
     }
     return p;
 }
 const palette = makePalette();
 
-// 打包：[文件名长度2字节][文件名][文件二进制]
+//打包：[文件名长度2字节][文件名][文件二进制]
 function buildPayload(filename, bin){
     const nameRaw = new TextEncoder().encode(filename);
     const out = new Uint8Array(2 + nameRaw.length + bin.length);
@@ -172,7 +172,7 @@ function parsePayload(buf){
     return {name,data};
 }
 
-// 水平镜像翻转
+//水平镜像翻转
 function postProcess(canvas){
     const w=canvas.width, h=canvas.height;
     cvsMirror.width=w; cvsMirror.height=h;
@@ -184,45 +184,43 @@ function postProcess(canvas){
     return cvsMirror;
 }
 
-// Uint8Array → 6bit索引流，头部存填充位数
-function bytesTo6BitStream(arr){
+//Uint8Array →4bit索引流，头部存放填充bit数量
+function bytesTo4BitStream(arr){
     let acc = 0;
     let bitCnt = 0;
     const stream = [];
     for(const b of arr){
         acc = (acc << 8) | b;
         bitCnt += 8;
-        while(bitCnt >= 6){
-            bitCnt -= 6;
-            stream.push( (acc >> bitCnt) & 0x3F );
+        while(bitCnt >=4){
+            bitCnt -=4;
+            stream.push( (acc >> bitCnt) & 0x0F );
         }
     }
-    // 头部写入末尾填充bit数量
     stream.unshift(bitCnt);
     return stream;
 }
 
-// 6bit索引流 → Uint8Array，去掉头部填充位
-function sixBitStreamToBytes(stream){
+//4bit索引流转回Uint8Array，丢弃头部填充比特
+function fourBitStreamToBytes(stream){
     const pad = stream[0];
     const data = stream.slice(1);
     let acc = 0;
     let bitCnt = 0;
     const out = [];
     for(const v of data){
-        acc = (acc << 6) | v;
-        bitCnt += 6;
-        while(bitCnt >= 8){
-            bitCnt -= 8;
+        acc = (acc <<4) | v;
+        bitCnt +=4;
+        while(bitCnt >=8){
+            bitCnt -=8;
             out.push( (acc >> bitCnt) & 0xFF );
         }
     }
-    // 丢弃末尾填充比特
-    if(pad > 0){
+    if(pad>0){
         const remain = bitCnt - pad;
-        if(remain > 0){
+        if(remain>0){
             acc = acc >> remain;
-            out.push(acc & 0xFF);
+            out.push(acc &0xFF);
         }
     }
     return new Uint8Array(out);
@@ -235,7 +233,7 @@ btnEnc.onclick = async function(){
     try{
         const arr = new Uint8Array(await f.arrayBuffer());
         const payload = buildPayload(f.name, arr);
-        const bitStream = bytesTo6BitStream(payload);
+        const bitStream = bytesTo4BitStream(payload);
 
         const side = Math.ceil(Math.sqrt(bitStream.length));
         cvsWork.width=side; cvsWork.height=side;
@@ -252,7 +250,7 @@ btnEnc.onclick = async function(){
         const blob = await new Promise(r=>final.toBlob(r,"image/png"));
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href=url; a.download=f.name+".64c.png";
+        a.href=url; a.download=f.name+".16c.png";
         document.body.appendChild(a); a.click(); a.remove();
 
         prevImg.src=url; previewBox.style.display="block";
@@ -276,7 +274,7 @@ btnDec.onclick = async function(){
         cvsWork.width=w; cvsWork.height=h;
         ctxWork.drawImage(img,0,0);
 
-        // 镜像复原
+        //镜像复原
         cvsMirror.width=w; cvsMirror.height=h;
         ctxMirror.save();
         ctxMirror.translate(w,0); ctxMirror.scale(-1,1);
@@ -284,7 +282,6 @@ btnDec.onclick = async function(){
         ctxMirror.restore();
         const revData = ctxMirror.getImageData(0,0,w,h).data;
 
-        // 像素匹配调色板，还原6bit索引流
         const bitStream=[];
         for(let p=0;p<revData.length;p+=4){
             const r=revData[p],g=revData[p+1],b=revData[p+2];
@@ -297,7 +294,7 @@ btnDec.onclick = async function(){
             bitStream.push(best);
         }
 
-        const rawBuf = sixBitStreamToBytes(bitStream);
+        const rawBuf = fourBitStreamToBytes(bitStream);
         const res = parsePayload(rawBuf);
         const blob = new Blob([res.data]);
         const url = URL.createObjectURL(blob);
