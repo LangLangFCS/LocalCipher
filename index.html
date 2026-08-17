@@ -180,11 +180,30 @@ const btnEncode = document.getElementById('btnEncode');
 const btnDecode = document.getElementById('btnDecode');
 const modeTip = document.getElementById('modeTip');
 
+const TEXT_ENC_DEFAULT = "选择待编码文件";
+const TEXT_DEC_DEFAULT = "选择PNG图片";
+
 let palette = [];
 
 //蓝色按钮触发原生文件选择
 btnSelectEnc.onclick = ()=> encFile.click();
 btnSelectDec.onclick = ()=> decFile.click();
+
+//选完文件，把文件名显示到按钮
+encFile.onchange = function(){
+    if(this.files.length>0){
+        btnSelectEnc.textContent = this.files[0].name;
+    }else{
+        btnSelectEnc.textContent = TEXT_ENC_DEFAULT;
+    }
+};
+decFile.onchange = function(){
+    if(this.files.length>0){
+        btnSelectDec.textContent = this.files[0].name;
+    }else{
+        btnSelectDec.textContent = TEXT_DEC_DEFAULT;
+    }
+};
 
 function getMode(){
     return document.querySelector('input[name="mode"]:checked').value;
@@ -356,23 +375,4 @@ btnEncode.onclick=async ()=>{
         const a = document.createElement('a');
         a.href=url;
         a.download = file.name + (mode==="16"?".16color.png":".64color.png");
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-
-        prevImg.src=url;
-        previewBox.style.display="block";
-        toast("编码完成，已下载PNG");
-    }catch(e){
-        toast("编码错误："+e.message,true);
-        console.error(e);
-    }finally{
-        btnEncode.disabled=false;
-        btnEncode.textContent="编码并下载PNG";
-    }
-};
-
-btnDecode.onclick=async ()=>{
-    const file = decFile.files[0];
-    if(!file) return toast("请先选择png图片",true);
-    btnDecode.disabled=true;
+        document.body.append
