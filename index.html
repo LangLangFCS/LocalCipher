@@ -59,16 +59,12 @@ h1{
     margin-bottom:12px;
     color:#f3f4f6;
 }
-input[type="file"]{
-    width:100%;
-    padding:12px 14px;
-    margin-bottom:12px;
-    background:#21252e;
-    border:1px solid #333844;
-    border-radius:10px;
-    color:#e5e7eb;
+
+/* 隐藏原生文件输入 */
+.input-file-hidden{
+    display:none;
 }
-button{
+.btn-blue{
     width:100%;
     padding:12px;
     border:none;
@@ -79,14 +75,15 @@ button{
     cursor:pointer;
     margin-bottom:10px;
 }
-button:hover:not(:disabled){
+.btn-blue:hover:not(:disabled){
     background:#1d4ed8;
 }
-button:disabled{
+.btn-blue:disabled{
     background:#2d323d;
     color:#717885;
     cursor:not-allowed;
 }
+
 .radio-wrap{
     display:flex;
     gap:24px;
@@ -119,7 +116,7 @@ button:disabled{
 <body>
 <div class="container">
     <h1>LocalCipher 图片载体编解码器</h1>
-    <div class="subtitle">16色(4bit稳定)｜64色(6bit体积更小)｜水平镜像翻转</div>
+    <div class="subtitle">16色/64色｜镜像→交换2&18行｜黑→白｜红→蓝｜保存原文件名</div>
 
     <div class="card">
         <h3>选择模式</h3>
@@ -138,14 +135,16 @@ button:disabled{
 
     <div class="card">
         <h3>编码 文件转为PNG图片</h3>
-        <input type="file" id="encFile">
-        <button id="btnEncode">编码并下载PNG</button>
+        <input type="file" id="encFile" class="input-file-hidden">
+        <button class="btn-blue" id="btnSelectEnc">选择待编码文件</button>
+        <button class="btn-blue" id="btnEncode">编码并下载PNG</button>
     </div>
 
     <div class="card">
         <h3>解码 PNG恢复原文件</h3>
-        <input type="file" id="decFile" accept=".png">
-        <button id="btnDecode">解码并恢复文件</button>
+        <input type="file" id="decFile" accept=".png" class="input-file-hidden">
+        <button class="btn-blue" id="btnSelectDec">选择PNG图片</button>
+        <button class="btn-blue" id="btnDecode">解码恢复文件</button>
     </div>
 
     <div class="card">
@@ -160,6 +159,7 @@ button:disabled{
 
 <canvas id="workCanvas" style="display:none;"></canvas>
 <canvas id="mirrorCanvas" style="display:none;"></canvas>
+<canvas id="postCanvas" style="display:none;"></canvas>
 
 <script>
 const msgEl = document.getElementById('msg');
@@ -169,13 +169,22 @@ const canvas = document.getElementById('workCanvas');
 const ctx = canvas.getContext('2d');
 const mCanvas = document.getElementById('mirrorCanvas');
 const mCtx = mCanvas.getContext('2d');
+const postCanvas = document.getElementById('postCanvas');
+const postCtx = postCanvas.getContext('2d');
+
 const encFile = document.getElementById('encFile');
 const decFile = document.getElementById('decFile');
+const btnSelectEnc = document.getElementById('btnSelectEnc');
+const btnSelectDec = document.getElementById('btnSelectDec');
 const btnEncode = document.getElementById('btnEncode');
 const btnDecode = document.getElementById('btnDecode');
 const modeTip = document.getElementById('modeTip');
 
 let palette = [];
+
+//蓝色按钮触发原生文件选择
+btnSelectEnc.onclick = ()=> encFile.click();
+btnSelectDec.onclick = ()=> decFile.click();
 
 function getMode(){
     return document.querySelector('input[name="mode"]:checked').value;
@@ -226,26 +235,94 @@ function findIndex(r,g,b){
     return best;
 }
 
+//打包文件名+数据
+function buildPayloadBytes(filename,fileUint8){
+    const nameBuf = new TextEncoder().encode(filename);
+    const lenBuf = new Uint8Array(2);
+    lenBuf[0] = nameBuf.length >> 8;
+    lenBuf[1] = nameBuf.length & 0xff;
+    const out = new Uint8Array(lenBuf.length + nameBuf.length + fileUint8.length);
+    out.set(lenBuf,0);
+    out.set(nameBuf, lenBuf.length);
+    out.set(fileUint8, lenBuf.length + nameBuf.length);
+    return out;
+}
+
+function parsePayloadBytes(rawBytes){
+    const nameLen = (rawBytes[0] <<8) | rawBytes[1];
+    const nameBuf = rawBytes.slice(2, 2+nameLen);
+    const name = new TextDecoder().decode(nameBuf);
+    const data = rawBytes.slice(2+nameLen);
+    return {name,data};
+}
+
+//后期处理：镜像后、交换行、颜色替换
+function postProcessImage(sourceCanvas){
+    const w = sourceCanvas.width;
+    const h = sourceCanvas.height;
+    postCanvas.width = w;
+    postCanvas.height = h;
+    postCtx.drawImage(sourceCanvas,0,0);
+
+    //1.水平镜像翻转
+    postCtx.save();
+    postCtx.translate(w,0);
+    postCtx.scale(-1,1);
+    postCtx.drawImage(sourceCanvas,0,0);
+    postCtx.restore();
+
+    let imgData = postCtx.getImageData(0,0,w,h);
+    const data = imgData.data;
+
+    //2.交换第2排 y=1；第18排 y=17
+    const y1 = 1;
+    const y2 = 17;
+    if(h>y2){
+        const row1 = new Uint8ClampedArray(w*4);
+        const row2 = new Uint8ClampedArray(w*4);
+        row1.set(data.subarray(y1*w*4, (y1+1)*w*4));
+        row2.set(data.subarray(y2*w*4, (y2+1)*w*4));
+        data.set(row2, y1*w*4);
+        data.set(row1, y2*w*4);
+    }
+
+    //3.黑色→白色；红色→蓝色
+    for(let i=0;i<data.length;i+=4){
+        let r=data[i],g=data[i+1],b=data[i+2];
+        if(r===0&&g===0&&b===0){
+            data[i]=255;data[i+1]=255;data[i+2]=255;
+        }
+        //红色判定：r高 g=b接近0
+        if(r>120 && g<60 && b<60){
+            data[i]=0;data[i+1]=0;data[i+2]=255;
+        }
+    }
+    postCtx.putImageData(imgData,0,0);
+    return postCanvas;
+}
+
 btnEncode.onclick=async ()=>{
     const file = encFile.files[0];
-    if(!file) return toast("请选择文件",true);
+    if(!file) return toast("请先选择待编码文件",true);
     btnEncode.disabled=true;
-    toast("正在编码");
+    btnEncode.textContent="正在编码";
+    toast("");
     try{
         const buf = await file.arrayBuffer();
-        const bytes = new Uint8Array(buf);
+        const fileBytes = new Uint8Array(buf);
         const mode = getMode();
-        let bitStream=[];
+        const payloadBytes = buildPayloadBytes(file.name, fileBytes);
 
+        let bitStream=[];
         if(mode==="16"){
-            for(const b of bytes){
+            for(const b of payloadBytes){
                 bitStream.push((b>>4)&0x0F);
                 bitStream.push(b&0x0F);
             }
         }else{
             let acc=0;
             let bitCnt=0;
-            for(const b of bytes){
+            for(const b of payloadBytes){
                 acc = (acc <<8) | b;
                 bitCnt +=8;
                 while(bitCnt >=6){
@@ -271,13 +348,10 @@ btnEncode.onclick=async ()=>{
             ctx.fillRect(x,y,1,1);
         }
 
-        mCanvas.width=side; mCanvas.height=side;
-        mCtx.save();
-        mCtx.scale(-1,1);
-        mCtx.drawImage(canvas,-side,0,side,side);
-        mCtx.restore();
+        //执行后期变换
+        const finalCanvas = postProcessImage(canvas);
 
-        const blob = await new Promise(res=>mCanvas.toBlob(res,"image/png"));
+        const blob = await new Promise(res=>finalCanvas.toBlob(res,"image/png"));
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href=url;
@@ -294,90 +368,11 @@ btnEncode.onclick=async ()=>{
         console.error(e);
     }finally{
         btnEncode.disabled=false;
+        btnEncode.textContent="编码并下载PNG";
     }
 };
 
 btnDecode.onclick=async ()=>{
     const file = decFile.files[0];
-    if(!file) return toast("请选择png图片",true);
+    if(!file) return toast("请先选择png图片",true);
     btnDecode.disabled=true;
-    toast("正在解码");
-    try{
-        const img=new Image();
-        await new Promise((res,rej)=>{
-            img.onload=res;img.onerror=rej;
-            img.src=URL.createObjectURL(file);
-        });
-        const w=img.width;
-        const h=img.height;
-        mCanvas.width=w;mCanvas.height=h;
-        mCtx.drawImage(img,0,0);
-
-        canvas.width=w;canvas.height=h;
-        ctx.save();
-        ctx.scale(-1,1);
-        ctx.drawImage(mCanvas,-w,0,w,h);
-        ctx.restore();
-
-        const imgData = ctx.getImageData(0,0,w,h);
-        const pixels = imgData.data;
-        const totalPixel = pixels.length/4;
-        const mode = getMode();
-
-        const bitStream=[];
-        for(let p=0;p<totalPixel;p++){
-            const i=p*4;
-            const r=pixels[i];
-            const g=pixels[i+1];
-            const b=pixels[i+2];
-            bitStream.push(findIndex(r,g,b));
-        }
-
-        let outBytes=[];
-        if(mode==="16"){
-            for(let i=0;i+1<bitStream.length;i+=2){
-                const hi=bitStream[i];
-                const lo=bitStream[i+1];
-                outBytes.push((hi<<4)|lo);
-            }
-        }else{
-            const pad = bitStream[0];
-            const stream = bitStream.slice(1);
-            let acc=0;
-            let bitCnt=0;
-            for(const v of stream){
-                acc = (acc <<6) | v;
-                bitCnt +=6;
-                while(bitCnt >=8){
-                    bitCnt -=8;
-                    outBytes.push( (acc >> bitCnt) & 0xFF );
-                }
-            }
-            if(pad>0){
-                outBytes.pop();
-            }
-        }
-
-        const result = new Uint8Array(outBytes);
-        const blob = new Blob([result]);
-        const url = URL.createObjectURL(blob);
-        const a=document.createElement('a');
-        a.href=url;
-        a.download="recovered.bin";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-
-        prevImg.src=img.src;
-        previewBox.style.display="block";
-        toast("解码完成，已输出恢复文件");
-    }catch(e){
-        toast("解码错误："+e.message,true);
-        console.error(e);
-    }finally{
-        btnDecode.disabled=false;
-    }
-};
-</script>
-</body>
-</html>
