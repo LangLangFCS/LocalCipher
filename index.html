@@ -356,7 +356,7 @@ btnDec.onclick = async function(){
             let best=0,minD=1e9;
             for(let idx=0;idx<palette.length;idx++){
                 const c=palette[idx];
-                const d=(r‑c.r)**2+(g‑c.g)**2+(b‑c.b)**2;
+                const d=(r-c.r)**2+(g-c.g)**2+(b-c.b)**2;
                 if(d<minD){minD=d;best=idx;}
             }
             bitStream.push(best);
