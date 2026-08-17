@@ -60,13 +60,13 @@ h1{
     color:#f3f4f6;
 }
 
-/* 安全隐藏file输入，禁止display:none */
-.input-file-hidden{
+/*原生隐藏文件输入，不能display:none*/
+.real-file{
     position:absolute;
-    opacity:0;
     width:1px;
     height:1px;
-    left:-9999px;
+    opacity:0;
+    overflow:hidden;
 }
 .btn-blue{
     width:100%;
@@ -78,6 +78,7 @@ h1{
     font-size:15px;
     cursor:pointer;
     margin-bottom:10px;
+    display:block;
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
@@ -142,15 +143,15 @@ h1{
 
     <div class="card">
         <h3>编码 文件转为PNG图片</h3>
-        <input type="file" id="encFile" class="input-file-hidden">
-        <button class="btn-blue" id="btnSelectEnc">选择待编码文件</button>
+        <input type="file" id="encFile" class="real-file">
+        <label for="encFile" class="btn-blue" id="labelEnc">选择待编码文件</label>
         <button class="btn-blue" id="btnEncode">编码并下载PNG</button>
     </div>
 
     <div class="card">
         <h3>解码 PNG恢复原文件</h3>
-        <input type="file" id="decFile" accept=".png" class="input-file-hidden">
-        <button class="btn-blue" id="btnSelectDec">选择PNG图片</button>
+        <input type="file" id="decFile" accept=".png" class="real-file">
+        <label for="decFile" class="btn-blue" id="labelDec">选择PNG图片</label>
         <button class="btn-blue" id="btnDecode">解码恢复文件</button>
     </div>
 
@@ -181,8 +182,8 @@ const postCtx = postCanvas.getContext('2d');
 
 const encFile = document.getElementById('encFile');
 const decFile = document.getElementById('decFile');
-const btnSelectEnc = document.getElementById('btnSelectEnc');
-const btnSelectDec = document.getElementById('btnSelectDec');
+const labelEnc = document.getElementById('labelEnc');
+const labelDec = document.getElementById('labelDec');
 const btnEncode = document.getElementById('btnEncode');
 const btnDecode = document.getElementById('btnDecode');
 const modeTip = document.getElementById('modeTip');
@@ -192,7 +193,6 @@ const TEXT_DEC_DEFAULT = "选择PNG图片";
 
 let palette = [];
 
-//截断长文件名
 function truncName(name, maxLen=22){
     if(name.length <= maxLen) return name;
     const ext = name.lastIndexOf('.');
@@ -201,28 +201,18 @@ function truncName(name, maxLen=22){
     return name.slice(0, maxLen‑suffix.length‑2)+'…'+suffix;
 }
 
-//按钮点击直接唤起文件框，在用户手势内部，绕过安全拦截
-btnSelectEnc.onclick = function(){
-    encFile.value = ''; //清空，允许重复选同一个文件
-    encFile.click();
-};
-btnSelectDec.onclick = function(){
-    decFile.value = '';
-    decFile.click();
-};
-
-encFile.addEventListener('change', function(){
-    if(this.files && this.files.length > 0){
-        btnSelectEnc.textContent = truncName(this.files[0].name);
+encFile.addEventListener('change',function(){
+    if(this.files.length>0){
+        labelEnc.textContent = truncName(this.files[0].name);
     }else{
-        btnSelectEnc.textContent = TEXT_ENC_DEFAULT;
+        labelEnc.textContent = TEXT_ENC_DEFAULT;
     }
 });
-decFile.addEventListener('change', function(){
-    if(this.files && this.files.length > 0){
-        btnSelectDec.textContent = truncName(this.files[0].name);
+decFile.addEventListener('change',function(){
+    if(this.files.length>0){
+        labelDec.textContent = truncName(this.files[0].name);
     }else{
-        btnSelectDec.textContent = TEXT_DEC_DEFAULT;
+        labelDec.textContent = TEXT_DEC_DEFAULT;
     }
 });
 
@@ -244,7 +234,7 @@ function updatePalette(){
             const b = 0;
             palette.push({r,g,b});
         }
-        modeTip.textContent = "16色(4bit):无填充位，解码稳定，图片尺寸偏大";
+        modeTip.textContent = "16色(4bit):无填充位，图片尺寸偏大";
     }else{
         for(let i=0;i<64;i++){
             const r = (i & 0b111)*36;
@@ -279,7 +269,6 @@ function findIndex(r,g,b){
     return best;
 }
 
-//打包文件名+数据
 function buildPayloadBytes(filename,fileUint8){
     const nameBuf = new TextEncoder().encode(filename);
     const lenBuf = new Uint8Array(2);
@@ -300,7 +289,6 @@ function parsePayloadBytes(rawBytes){
     return {name,data};
 }
 
-//后期处理：镜像后、交换行、颜色替换
 function postProcessImage(sourceCanvas){
     const w = sourceCanvas.width;
     const h = sourceCanvas.height;
@@ -308,7 +296,6 @@ function postProcessImage(sourceCanvas){
     postCanvas.height = h;
     postCtx.drawImage(sourceCanvas,0,0);
 
-    //1.水平镜像翻转
     postCtx.save();
     postCtx.translate(w,0);
     postCtx.scale(-1,1);
@@ -317,8 +304,6 @@ function postProcessImage(sourceCanvas){
 
     let imgData = postCtx.getImageData(0,0,w,h);
     const data = imgData.data;
-
-    //2.交换第2排 y=1；第18排 y=17
     const y1 = 1;
     const y2 = 17;
     if(h>y2){
@@ -330,7 +315,6 @@ function postProcessImage(sourceCanvas){
         data.set(row1, y2*w*4);
     }
 
-    //3.黑色→白色；红色→蓝色
     for(let i=0;i<data.length;i+=4){
         let r=data[i],g=data[i+1],b=data[i+2];
         if(r===0&&g===0&&b===0){
@@ -381,4 +365,15 @@ btnEncode.onclick=async ()=>{
         const total = bitStream.length;
         const side = Math.ceil(Math.sqrt(total));
         canvas.width=side; canvas.height=side;
-        ctx.clearRect(0,
+        ctx.clearRect(0,0,side,side);
+
+        for(let i=0;i<total;i++){
+            const x = i % side;
+            const y = Math.floor(i / side);
+            const c = palette[bitStream[i]];
+            ctx.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
+            ctx.fillRect(x,y,1,1);
+        }
+
+        const finalCanvas = postProcessImage(canvas);
+        const blob = await new Promise(res=>finalC
