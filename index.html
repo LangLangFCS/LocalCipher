@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LocalCipher PNG</title>
+<title>LocalCipher 64色编解码器</title>
 <style>
 *{
     margin:0;
@@ -60,9 +60,7 @@ h1{
     margin-bottom:16px;
     color:#f3f4f6;
 }
-input[type="file"],
-input[type="password"],
-select{
+input[type="file"]{
     width:100%;
     padding:12px 14px;
     margin-bottom:14px;
@@ -84,10 +82,6 @@ input[type="file"]::file-selector-button {
 }
 input[type="file"]::file-selector-button:hover {
     background:#1d4ed8;
-}
-input:focus,select:focus{
-    outline:none;
-    border-color:#3b82f6;
 }
 button{
     width:100%;
@@ -130,11 +124,6 @@ button:disabled{
 .preview-card img{
     max-width:100%;
 }
-.preview-card pre{
-    white-space:pre-wrap;
-    font-size:13px;
-    line-height:1.4;
-}
 @media(max-width:600px){
     h1{font-size:22px;}
     .card{padding:18px;}
@@ -143,136 +132,262 @@ button:disabled{
 </head>
 <body>
 <div class="container">
-    <h1>LocalCipher PNG</h1>
-    <div class="subtitle">File‑to‑16color image + mirror flip</div>
+    <h1>LocalCipher 64色编解码器</h1>
+    <div class="subtitle">文件转64色图片，水平镜像翻转</div>
     <div class="message" id="msg"></div>
-    <div class="tip-box" id="perfTip">Select file, generate 16‑color PNG with horizontal mirror flip.</div>
 
     <div class="card">
-        <h3>File To Image</h3>
-        <input type="file" id="fileInput">
-        <button id="btnGen">Generate & Download PNG</button>
+        <h3>编码 文件转为图片</h3>
+        <input type="file" id="encFile">
+        <button id="btnEncode">编码并下载文件</button>
     </div>
 
     <div class="card">
-        <h3>Preview</h3>
+        <h3>解码 图片恢复原文件</h3>
+        <input type="file" id="decFile">
+        <button id="btnDecode">解码并恢复文件</button>
+    </div>
+
+    <div class="card">
+        <h3>预览</h3>
         <div class="preview-card" id="previewBox" style="display:none;">
-            <div id="previewInner"></div>
+            <img id="prevImg">
         </div>
     </div>
 </div>
 
 <canvas id="workCanvas" style="display:none;"></canvas>
+<canvas id="mirrorCanvas" style="display:none;"></canvas>
 
 <script>
 const msgEl = document.getElementById('msg');
-const perfTip = document.getElementById('perfTip');
 const previewBox = document.getElementById('previewBox');
-const previewInner = document.getElementById('previewInner');
+const prevImg = document.getElementById('prevImg');
 const canvas = document.getElementById('workCanvas');
 const ctx = canvas.getContext('2d');
-const fileInput = document.getElementById('fileInput');
-const btnGen = document.getElementById('btnGen');
+const mCanvas = document.getElementById('mirrorCanvas');
+const mCtx = mCanvas.getContext('2d');
 
-let lastPreviewUrl = null;
+const encFile = document.getElementById('encFile');
+const decFile = document.getElementById('decFile');
+const btnEncode = document.getElementById('btnEncode');
+const btnDecode = document.getElementById('btnDecode');
 
-// 16种颜色，对应0‑F 16进制每4bit
-const palette16 = [
-    "#000000", "#1a1a2e", "#16213e", "#0f3460",
-    "#533483", "#e94560", "#ff6b6b", "#ffd93d",
-    "#6bcb77", "#4d96ff", "#9d65c9", "#ff9de2",
-    "#48dbfb", "#1dd1a1", "#ff9f43", "#ffffff"
-];
+//生成64色调色板
+const palette64 = [];
+for(let i=0;i<64;i++){
+    const hue = (i / 64) * 360;
+    const s = 0.85;
+    const l = 0.55;
+    palette64.push(hslToHex(hue,s,l));
+}
 
-function toast(s, isWarn=false){
-    msgEl.textContent = s;
-    msgEl.className = isWarn ? "message warn" : "message info";
+function hslToHex(h, s, l) {
+    h /= 360;
+    s /= 100;
+    l /= 100;
+    let r, g, b;
+    if (s === 0) {
+        r = g = b = l;
+    } else {
+        const hue2rgb = (p, q, t) => {
+            if(t < 0) t += 1;
+            if(t > 1) t -= 1;
+            if(t < 1/6) return p + (q - p) * 6 * t;
+            if(t < 1/2) return q;
+            if(t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+            return p;
+        };
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+    }
+    const toHex = x => {
+        const hex = Math.round(x*255).toString(16);
+        return hex.length===1 ? '0'+hex : hex;
+    };
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+        r: parseInt(result[1],16),
+        g: parseInt(result[2],16),
+        b: parseInt(result[3],16)
+    } : null;
+}
+
+function findPaletteIndex(r,g,b){
+    let best=0;
+    let minD=1e9;
+    for(let i=0;i<64;i++){
+        const c=hexToRgb(palette64[i]);
+        const dr=r-c.r;
+        const dg=g-c.g;
+        const db=b-c.b;
+        const dist=dr*dr+dg*dg+db*db;
+        if(dist<minD){
+            minD=dist;
+            best=i;
+        }
+    }
+    return best;
+}
+
+function toast(s,isWarn=false){
+    msgEl.textContent=s;
+    msgEl.className= isWarn?"message warn":"message info";
     void msgEl.offsetHeight;
 }
 
-function clearPreview(){
-    if(lastPreviewUrl){
-        URL.revokeObjectURL(lastPreviewUrl);
-        lastPreviewUrl=null;
-    }
-    previewInner.innerHTML="";
-    previewBox.style.display="none";
-}
-
-fileInput.addEventListener('change',()=>{
-    const f = fileInput.files[0];
-    if(!f){
-        perfTip.innerText="Select file, generate 16‑color PNG with horizontal mirror flip.";
-        return;
-    }
-    perfTip.innerText=`File: ${f.name} | ${(f.size/1024).toFixed(2)}KB`;
-});
-
-btnGen.onclick = async ()=>{
-    clearPreview();
-    const file = fileInput.files[0];
-    if(!file){
-        toast("Please choose a file",true);
-        return;
-    }
-    btnGen.disabled = true;
-    toast("Reading file…");
+//编码逻辑
+btnEncode.onclick=async ()=>{
+    const file=encFile.files[0];
+    if(!file) return toast("请选择文件",true);
+    btnEncode.disabled=true;
+    toast("正在编码");
     try{
-        const buf = await file.arrayBuffer();
-        const uint = new Uint8Array(buf);
+        const arrBuf=await file.arrayBuffer();
+        const bytes=new Uint8Array(arrBuf);
+        const originalByteLen=bytes.length;
 
-        // 把每个字节拆成高4bit、低4bit，每个取值0‑15
-        const nibbles = [];
-        for(let i=0;i<uint.length;i++){
-            const b = uint[i];
-            const hi = (b >> 4) & 0x0F;
-            const lo = b & 0x0F;
-            nibbles.push(hi, lo);
+        const nib6=[];
+        let bitAcc=0;
+        let bitCount=0;
+        for(let i=0;i<bytes.length;i++){
+            const b=bytes[i];
+            bitAcc=(bitAcc<<8)|b;
+            bitCount+=8;
+            while(bitCount>=6){
+                bitCount-=6;
+                const val=(bitAcc>>bitCount)&0x3F;
+                nib6.push(val);
+            }
+        }
+        if(bitCount>0){
+            bitAcc=bitAcc<<(6-bitCount);
+            nib6.push(bitAcc&0x3F);
         }
 
-        // 计算正方形画布边长
-        const totalPixels = nibbles.length;
-        const side = Math.ceil(Math.sqrt(totalPixels));
-        canvas.width = side;
-        canvas.height = side;
+        const totalPix=nib6.length;
+        const side=Math.ceil(Math.sqrt(totalPix));
+        canvas.width=side;
+        canvas.height=side;
         ctx.clearRect(0,0,side,side);
 
-        // 填充像素，取调色板颜色
-        for(let idx=0;idx<totalPixels;idx++){
-            const x = idx % side;
-            const y = Math.floor(idx / side);
-            const cIndex = nibbles[idx];
-            ctx.fillStyle = palette16[cIndex];
+        for(let idx=0;idx<totalPix;idx++){
+            const x=idx%side;
+            const y=Math.floor(idx/side);
+            ctx.fillStyle=palette64[nib6[idx]];
             ctx.fillRect(x,y,1,1);
         }
 
-        // ==========水平镜像反转==========
-        ctx.save();
-        ctx.scale(-1,1);
-        ctx.drawImage(canvas, -side, 0, side, side);
-        ctx.restore();
+        mCanvas.width=side; mCanvas.height=side;
+        mCtx.save();
+        mCtx.scale(-1,1);
+        mCtx.drawImage(canvas,-side,0,side,side);
+        mCtx.restore();
 
-        // 导出PNG
-        const pngUrl = canvas.toDataURL("image/png");
-        const a = document.createElement('a');
-        a.href = pngUrl;
-        a.download = file.name + "_16color_mirror.png";
+        const blob=await new Promise(res=>mCanvas.toBlob(res,"image/png"));
+        const metaBuf=new ArrayBuffer(8);
+        const metaView=new DataView(metaBuf);
+        metaView.setBigUint64(0,BigInt(originalByteLen));
+        const metaArr=new Uint8Array(metaBuf);
+        const pngArr=new Uint8Array(await blob.arrayBuffer());
+        const combined=new Blob([metaArr,pngArr],{type:"application/octet‑stream"});
+
+        const url=URL.createObjectURL(combined);
+        const a=document.createElement("a");
+        a.href=url;
+        a.download=file.name+".encoded64";
         document.body.appendChild(a);
         a.click();
         a.remove();
 
-        // 预览
-        const img = new Image();
-        img.src = pngUrl;
-        lastPreviewUrl = pngUrl;
-        previewInner.appendChild(img);
+        prevImg.src=URL.createObjectURL(blob);
         previewBox.style.display="block";
-        toast("Generated done, downloaded");
-    }catch(err){
-        toast("Error: "+err.message,true);
-        console.error(err);
+        toast("编码完成，已下载encoded64文件");
+    }catch(e){
+        toast("编码错误: "+e.message,true);
+        console.error(e);
     }finally{
-        btnGen.disabled = false;
+        btnEncode.disabled=false;
+    }
+};
+
+//解码逻辑
+btnDecode.onclick=async ()=>{
+    const file=decFile.files[0];
+    if(!file) return toast("请选择encoded64文件",true);
+    btnDecode.disabled=true;
+    toast("正在解码");
+    try{
+        const fullBuf=await file.arrayBuffer();
+        const fullArr=new Uint8Array(fullBuf);
+        const metaView=new DataView(fullBuf);
+        const originalByteLen=Number(metaView.getBigUint64(0));
+        const pngData=fullArr.slice(8);
+        const pngBlob=new Blob([pngData],{type:"image/png"});
+
+        const img=new Image();
+        await new Promise((res,rej)=>{
+            img.onload=res; img.onerror=rej;
+            img.src=URL.createObjectURL(pngBlob);
+        });
+        const w=img.width;
+        const h=img.height;
+        mCanvas.width=w; mCanvas.height=h;
+        mCtx.drawImage(img,0,0);
+
+        canvas.width=w; canvas.height=h;
+        ctx.save();
+        ctx.scale(-1,1);
+        ctx.drawImage(mCanvas,-w,0,w,h);
+        ctx.restore();
+
+        const imgData=ctx.getImageData(0,0,w,h);
+        const pixels=imgData.data;
+        const nib6_out=[];
+        for(let i=0;i<pixels.length;i+=4){
+            const r=pixels[i];
+            const g=pixels[i+1];
+            const b=pixels[i+2];
+            const idx=findPaletteIndex(r,g,b);
+            nib6_out.push(idx);
+        }
+
+        let bitAcc=0;
+        let bitCount=0;
+        const outBytes=[];
+        for(const v of nib6_out){
+            bitAcc=(bitAcc<<6)|v;
+            bitCount+=6;
+            while(bitCount>=8){
+                bitCount-=8;
+                outBytes.push( (bitAcc>>bitCount)&0xFF );
+            }
+        }
+        const resultBytes=new Uint8Array(outBytes.slice(0,originalByteLen));
+        const outBlob=new Blob([resultBytes]);
+        const url=URL.createObjectURL(outBlob);
+        const a=document.createElement("a");
+        a.href=url;
+        a.download="recovered.bin";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        prevImg.src=img.src;
+        previewBox.style.display="block";
+        toast("解码完成，已输出恢复文件");
+    }catch(e){
+        toast("解码错误: "+e.message,true);
+        console.error(e);
+    }finally{
+        btnDecode.disabled=false;
     }
 };
 </script>
