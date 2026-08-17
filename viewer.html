@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LocalCipher Full Preview</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#0b0e14;color:#e8e8e8;padding:20px 14px;}
+.container{max-width:700px;margin:0 auto;}
+h2{margin-bottom:12px;}
+pre{white-space:pre-wrap;font-size:14px;line-height:1.5;background:#151a24;padding:12px;border-radius:8px;overflow:auto;}
+img{max-width:100%;}
+audio,video{width:100%;margin:8px 0;}
+</style>
+</head>
+<body>
+<div class="container">
+    <h2>Full‑View Preview</h2>
+    <div id="content"></div>
+</div>
+<script>
+const contentDiv = document.getElementById('content');
+const b64 = localStorage.getItem("lc_view_data");
+const filename = localStorage.getItem("lc_view_name");
+if(!b64){
+    contentDiv.innerText="No data. Return to main page and press Expand Full‑View.";
+}else{
+    const binaryStr = atob(b64);
+    const arr = Uint8Array.from(binaryStr,c=>c.charCodeAt(0));
+    const ext = filename.split('.').pop().toLowerCase();
+    contentDiv.innerHTML += `<div>File: ${filename}</div><br>`;
+    const blob = new Blob([arr]);
+    const url = URL.createObjectURL(blob);
+    if(["jpg","jpeg","png","gif","bmp","webp"].includes(ext)){
+        const img = document.createElement("img");
+        img.src=url;
+        contentDiv.appendChild(img);
+    }else if(["mp3","wav","ogg","flac"].includes(ext)){
+        const aud = document.createElement("audio");
+        aud.controls=true;aud.src=url;
+        contentDiv.appendChild(aud);
+    }else if(["mp4","webm","mov"].includes(ext)){
+        const vid = document.createElement("video");
+        vid.controls=true;vid.src=url;
+        contentDiv.appendChild(vid);
+    }else{
+        const text = new TextDecoder("utf‑8",{fatal:false}).decode(arr);
+        const pre = document.createElement("pre");
+        pre.textContent = text;
+        contentDiv.appendChild(pre);
+    }
+}
+</script>
+</body>
+</html>
