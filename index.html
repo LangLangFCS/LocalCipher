@@ -1,36 +1,222 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LocalCipher‑256 standalone</title>
 <style>
-#lab{
-  display:block;
-  background:#2563eb;
-  color:white;
-  padding:12px;
-  border-radius:10px;
-  cursor:pointer;
-}
-#f{
-  position:absolute;
-  opacity:0;
-}
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
+body{background:#0f1117;color:#e5e7eb;padding:20px 14px}
+.wrap{max-width:640px;margin:0 auto}
+h1{text-align:center;font-size:22px;margin-bottom:16px}
+.card{background:#181b23;border:1px solid #272b35;border-radius:14px;padding:18px;margin-bottom:14px}
+h3{margin-bottom:10px;font-size:16px}
+.btn{width:100%;padding:11px;border:none;border-radius:9px;background:#2563eb;color:#fff;font-size:15px;margin-bottom:9px;cursor:pointer}
+.btn:disabled{background:#2d323d;color:#999;cursor:not-allowed}
+.msg{min-height:26px;text-align:center;color:#93c5fd;margin:8px 0}
+.err{color:#ff7878}
+#fileEnc, #fileDec{position:absolute;opacity:0;width:1px;height:1px;overflow:hidden}
+.preview{background:#121620;border-radius:10px;padding:12px;margin-top:10px;display:none}
+.preview img{max-width:100%}
 </style>
 </head>
 <body>
-<div id="out">未选择</div>
-<input type="file" id="f">
-<label for="f" id="lab">点我选择文件</label>
+<div class="wrap">
+<h1>LocalCipher 256色</h1>
+
+<div class="card">
+<h3>编码 文件→PNG</h3>
+<input type="file" id="fileEnc">
+<label for="fileEnc" class="btn" id="labEnc">选择文件</label>
+<button class="btn" id="btnEnc">编码并下载PNG</button>
+</div>
+
+<div class="card">
+<h3>解码 PNG→原文件</h3>
+<input type="file" id="fileDec" accept=".png">
+<label for="fileDec" class="btn" id="labDec">选择PNG图片</label>
+<button class="btn" id="btnDec">解码恢复文件</button>
+</div>
+
+<div class="preview" id="previewBox">
+<img id="prevImg">
+</div>
+<div class="msg" id="msgBox"></div>
+</div>
+
+<canvas id="cvsWork" style="display:none"></canvas>
+<canvas id="cvsMirror" style="display:none"></canvas>
 
 <script>
-const fi=document.getElementById("f");
-const out=document.getElementById("out");
-fi.onchange=function(){
-  if(fi.files.length>0){
-    out.innerText=fi.files[0].name;
-  }else{
-    out.innerText="取消选择";
-  }
+const $ = s=>document.querySelector(s);
+const fileEnc = $("#fileEnc");
+const fileDec = $("#fileDec");
+const labEnc = $("#labEnc");
+const labDec = $("#labDec");
+const btnEnc = $("#btnEnc");
+const btnDec = $("#btnDec");
+const msgBox = $("#msgBox");
+const previewBox = $("#previewBox");
+const prevImg = $("#prevImg");
+const cvsWork = $("#cvsWork");
+const ctxWork = cvsWork.getContext("2d");
+const cvsMirror = $("#cvsMirror");
+const ctxMirror = cvsMirror.getContext("2d");
+
+const DEF_ENC = "选择文件";
+const DEF_DEC = "选择PNG图片";
+
+function toast(text,isError){
+    msgBox.textContent = text;
+    msgBox.className = "msg" + (isError?" err":"");
 }
+function shortName(n){
+    if(n.length<=22) return n;
+    const dot = n.lastIndexOf(".");
+    if(dot<0) return n.slice(0,19)+"…";
+    return n.slice(0,18)+"…"+n.slice(dot);
+}
+
+fileEnc.onchange = function(){
+    labEnc.textContent = this.files.length? shortName(this.files[0].name):DEF_ENC;
+};
+fileDec.onchange = function(){
+    labDec.textContent = this.files.length? shortName(this.files[0].name):DEF_DEC;
+};
+
+// 256色调色板 0‑255，R=index，G=0,B=0
+function makePalette(){
+    let p = [];
+    for(let i=0;i<256;i++) p.push({r:i,g:0,b:0});
+    return p;
+}
+const palette = makePalette();
+
+// 打包：[文件名长度2字节][文件名][文件二进制]
+function buildPayload(filename, bin){
+    const nameRaw = new TextEncoder().encode(filename);
+    const out = new Uint8Array(2 + nameRaw.length + bin.length);
+    out[0] = nameRaw.length >> 8;
+    out[1] = nameRaw.length & 0xff;
+    out.set(nameRaw,2);
+    out.set(bin, 2+nameRaw.length);
+    return out;
+}
+function parsePayload(buf){
+    const nameLen = (buf[0]<<8)|buf[1];
+    const name = new TextDecoder().decode(buf.slice(2,2+nameLen));
+    const data = buf.slice(2+nameLen);
+    return {name,data};
+}
+
+// 镜像+交换行1与17
+function postProcess(canvas){
+    const w=canvas.width, h=canvas.height;
+    cvsMirror.width=w; cvsMirror.height=h;
+    ctxMirror.save();
+    ctxMirror.translate(w,0);
+    ctxMirror.scale(-1,1);
+    ctxMirror.drawImage(canvas,0,0);
+    ctxMirror.restore();
+
+    const img = ctxMirror.getImageData(0,0,w,h);
+    const d = img.data;
+    if(h>17){
+        const r1 = w*4, r17 = 17*w*4;
+        for(let i=0;i<w*4;i++){
+            let t=d[r1+i]; d[r1+i]=d[r17+i]; d[r17+i]=t;
+        }
+    }
+    ctxMirror.putImageData(img,0,0);
+    return cvsMirror;
+}
+
+btnEnc.onclick = async function(){
+    const f = fileEnc.files[0];
+    if(!f) return toast("请先选择文件",true);
+    btnEnc.disabled=true; btnEnc.textContent="编码中…"; toast("");
+    try{
+        const arr = new Uint8Array(await f.arrayBuffer());
+        const payload = buildPayload(f.name, arr);
+        const side = Math.ceil(Math.sqrt(payload.length));
+        cvsWork.width=side; cvsWork.height=side;
+        ctxWork.clearRect(0,0,side,side);
+
+        for(let i=0;i<payload.length;i++){
+            const px = payload[i];
+            const c = palette[px];
+            const x = i%side;
+            const y = Math.floor(i/side);
+            ctxWork.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
+            ctxWork.fillRect(x,y,1,1);
+        }
+        const final = postProcess(cvsWork);
+        const blob = await new Promise(r=>final.toBlob(r,"image/png"));
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href=url; a.download=f.name+".256c.png";
+        document.body.appendChild(a); a.click(); a.remove();
+
+        prevImg.src=url; previewBox.style.display="block";
+        toast("编码完成");
+    }catch(e){
+        toast("编码失败："+e.message,true);
+        console.error(e);
+    }finally{
+        btnEnc.disabled=false; btnEnc.textContent="编码并下载PNG";
+    }
+};
+
+btnDec.onclick = async function(){
+    const f = fileDec.files[0];
+    if(!f) return toast("请先选择PNG",true);
+    btnDec.disabled=true; btnDec.textContent="解码中…"; toast("");
+    try{
+        const img = new Image();
+        await new Promise((ok,err)=>{img.onload=ok;img.onerror=err;img.src=URL.createObjectURL(f);});
+        const w=img.width, h=img.height;
+        cvsWork.width=w; cvsWork.height=h;
+        ctxWork.drawImage(img,0,0);
+        const id = ctxWork.getImageData(0,0,w,h);
+        const d = id.data;
+
+        // 镜像复原
+        cvsMirror.width=w; cvsMirror.height=h;
+        ctxMirror.save();
+        ctxMirror.translate(w,0); ctxMirror.scale(-1,1);
+        ctxMirror.drawImage(cvsWork,0,0);
+        ctxMirror.restore();
+        const revData = ctxMirror.getImageData(0,0,w,h).data;
+
+        // 交换行1与17复原
+        if(h>17){
+            const r1 = w*4, r17 = 17*w*4;
+            for(let i=0;i<w*4;i++){
+                let t=revData[r1+i]; revData[r1+i]=revData[r17+i]; revData[r17+i]=t;
+            }
+        }
+
+        // 取R通道作为字节
+        const out = [];
+        for(let p=0;p<revData.length;p+=4){
+            out.push(revData[p]);
+        }
+        const res = parsePayload(new Uint8Array(out));
+        const blob = new Blob([res.data]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href=url; a.download=res.name;
+        document.body.appendChild(a); a.click(); a.remove();
+
+        prevImg.src=img.src; previewBox.style.display="block";
+        toast("解码完成："+res.name);
+    }catch(e){
+        toast("解码失败："+e.message,true);
+        console.error(e);
+    }finally{
+        btnDec.disabled=false; btnDec.textContent="解码恢复文件";
+    }
+};
 </script>
 </body>
 </html>
