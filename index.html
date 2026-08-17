@@ -38,20 +38,27 @@ h3{
     font-size:16px;
 }
 .btn{
-    width:100%;
     padding:12px;
     border:none;
     border-radius:10px;
     background:#2563eb;
     color:#fff;
     font-size:15px;
-    margin-bottom:10px;
     cursor:pointer;
 }
 .btn:disabled{
     background:#2d323d;
     color:#999;
     cursor:not-allowed;
+}
+.btn-row{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+}
+.btn-auto{
+    flex:1 1 140px;
+    min-width:140px;
 }
 .msg{
     min-height:28px;
@@ -88,15 +95,19 @@ h3{
 <div class="card">
 <h3>编码 文件→PNG</h3>
 <input type="file" id="fileEnc">
-<label for="fileEnc" class="btn" id="labEnc">选择文件</label>
-<button class="btn" id="btnEnc">编码并下载PNG</button>
+<div class="btn-row">
+    <label for="fileEnc" class="btn btn-auto" id="labEnc">选择文件</label>
+    <button class="btn btn-auto" id="btnEnc">编码并下载PNG</button>
+</div>
 </div>
 
 <div class="card">
 <h3>解码 PNG→原文件</h3>
 <input type="file" id="fileDec" accept=".png">
-<label for="fileDec" class="btn" id="labDec">选择PNG图片</label>
-<button class="btn" id="btnDec">解码恢复文件</button>
+<div class="btn-row">
+    <label for="fileDec" class="btn btn-auto" id="labDec">选择PNG图片</label>
+    <button class="btn btn-auto" id="btnDec">解码恢复文件</button>
+</div>
 </div>
 
 <div class="preview" id="previewBox">
@@ -229,7 +240,7 @@ function fourBitStreamToBytes(stream){
 btnEnc.onclick = async function(){
     const f = fileEnc.files[0];
     if(!f) return toast("请先选择文件",true);
-    btnEnc.disabled=true; btnEnc.textContent="编码中…"; toast("");
+    btnEnc.disabled=true; toast("");
     try{
         const arr = new Uint8Array(await f.arrayBuffer());
         const payload = buildPayload(f.name, arr);
@@ -259,14 +270,14 @@ btnEnc.onclick = async function(){
         toast("编码失败："+e.message,true);
         console.error(e);
     }finally{
-        btnEnc.disabled=false; btnEnc.textContent="编码并下载PNG";
+        btnEnc.disabled=false;
     }
 };
 
 btnDec.onclick = async function(){
     const f = fileDec.files[0];
     if(!f) return toast("请先选择PNG",true);
-    btnDec.disabled=true; btnDec.textContent="解码中…"; toast("");
+    btnDec.disabled=true; toast("");
     try{
         const img = new Image();
         await new Promise((ok,err)=>{img.onload=ok;img.onerror=err;img.src=URL.createObjectURL(f);});
@@ -308,7 +319,7 @@ btnDec.onclick = async function(){
         toast("解码失败："+e.message,true);
         console.error(e);
     }finally{
-        btnDec.disabled=false; btnDec.textContent="解码恢复文件";
+        btnDec.disabled=false;
     }
 };
 </script>
