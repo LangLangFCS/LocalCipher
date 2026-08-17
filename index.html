@@ -227,7 +227,10 @@ const IV_LEN = 16;
 const PWD_ITER = 24;
 const SIZE_LIMIT = 6 * 1024 * 1024;
 
-function passwordSeed(pass){
+// 内嵌Worker代码，不需要额外worker.js文件
+const workerCode = `
+self.onmessage = (e)=>{
+    const {pass, PWD_ITER} = e.data;
     let arr = new Uint8Array(32);
     let s = pass;
     for(let iter=0;iter<PWD_ITER;iter++){
@@ -238,7 +241,20 @@ function passwordSeed(pass){
         }
         s = btoa(String.fromCharCode(...arr));
     }
-    return arr;
+    self.postMessage({seed:arr});
+};
+`;
+const blob = new Blob([workerCode], {type:"application/javascript"});
+const workerUrl = URL.createObjectURL(blob);
+const seedWorker = new Worker(workerUrl);
+
+function getPasswordSeed(password){
+    return new Promise(resolve=>{
+        seedWorker.postMessage({pass:password,PWD_ITER});
+        seedWorker.onmessage = (ev)=>{
+            resolve(ev.data.seed);
+        };
+    });
 }
 
 function genSBox(seed){
@@ -276,8 +292,8 @@ function streamUnMix(data, seed){
     return data;
 }
 
-function customEncrypt(rawBytes, password, ROUND){
-    const seedMain = passwordSeed(password);
+async function customEncrypt(rawBytes, password, ROUND){
+    const seedMain = await getPasswordSeed(password);
     const iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
     let data = new Uint8Array(rawBytes.length);
     data.set(rawBytes);
@@ -319,8 +335,8 @@ function customEncrypt(rawBytes, password, ROUND){
     return out;
 }
 
-function customDecrypt(encTotalBytes, password){
-    const seedMain = passwordSeed(password);
+async function customDecrypt(encTotalBytes, password){
+    const seedMain = await getPasswordSeed(password);
     const iv = encTotalBytes.slice(0,IV_LEN);
     const ROUND = encTotalBytes[IV_LEN];
     const cipherData = encTotalBytes.slice(IV_LEN+1);
@@ -349,17 +365,4 @@ function customDecrypt(encTotalBytes, password){
     }
 
     let ptr=0;
-    const out = new Uint8Array(cipherData.length);
-    for(let b of blocks){out.set(b,ptr);ptr+=b.length;}
-    for(let i=0;i<out.length;i++) out[i]^=iv[i%iv.length];
-    return out;
-}
-
-async function fileToArrayBuffer(file){return await file.arrayBuffer();}
-
-async function binaryToPng(binData){
-    const canvas = document.getElementById("workCanvas");
-    const ctx = canvas.getContext("2d");
-    const totalPixel = Math.ceil(binData.length /3);
-    const w = Math.ceil(Math.sqrt(totalPixel));
-    const h = Math.ceil(totalPixel /w)
+    const out = n
