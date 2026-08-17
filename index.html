@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LocalCipher - Offline File Encryptor</title>
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+}
+body{
+    min-height:100vh;
+    background-color:#0f1117;
+    color:#e5e7eb;
+    padding:24px 16px;
+}
+.container{
+    max-width:680px;
+    margin:0 auto;
+}
+h1{
+    font-size:26px;
+    font-weight:600;
+    margin-bottom:8px;
+    text-align:center;
+}
+.subtitle{
+    text-align:center;
+    font-size:13px;
+    color:#9ca3af;
+    margin-bottom:12px;
+}
+.message{
+    min-height:28px;
+    margin-bottom:12px;
+    text-align:center;
+    color:#93c5fd;
+    font-size:15px;
+}
+.warn{
+    color:#f87171;
+}
+.info{
+    color:#60a5fa;
+}
+.card{
+    background-color:#181b23;
+    border:1px solid #272b35;
+    border-radius:16px;
+    padding:24px;
+    margin-bottom:20px;
+}
+.card h3{
+    font-size:18px;
+    font-weight:500;
+    margin-bottom:16px;
+    color:#f3f4f6;
+}
+input[type="file"],
+input[type="password"],
+select{
+    width:100%;
+    padding:12px 14px;
+    margin-bottom:14px;
+    background:#21252e;
+    border:1px solid #333844;
+    border-radius:10px;
+    color:#e5e7eb;
+    font-size:15px;
+}
+input[type="file"]::file-selector-button {
+    background:#2563eb;
+    color:#fff;
+    border:none;
+    border-radius:6px;
+    padding:8px 14px;
+    cursor:pointer;
+    margin-right:12px;
+    transition:background 0.2s ease;
+}
+input[type="file"]::file-selector-button:hover {
+    background:#1d4ed8;
+}
+input:focus,select:focus{
+    outline:none;
+    border-color:#3b82f6;
+}
+.btn-row{
+    display:grid;
+    grid-template-columns:1fr 1fr 1fr;
+    gap:10px;
+}
+button{
+    width:100%;
+    padding:13px;
+    border:none;
+    border-radius:10px;
+    background:#2563eb;
+    color:#ffffff;
+    font-size:15px;
+    font-weight:500;
+    cursor:pointer;
+    transition:background 0.2s ease;
+}
+button:hover:not(:disabled){
+    background:#1d4ed8;
+}
+button:disabled{
+    background:#2d323d;
+    color:#717885;
+    cursor:not-allowed;
+}
+.tip-box{
+    font-size:13px;
+    padding:10px;
+    border-radius:8px;
+    background:#1e293b;
+    margin-bottom:14px;
+    line-height:1.5;
+}
+.preview-card{
+    background:#121620;
+    border:1px solid #2e3440;
+    border-radius:12px;
+    padding:16px;
+    margin-top:14px;
+    max-height:420px;
+    overflow:auto;
+}
+.preview‑header{
+    display:flex;
+    justify-content:space‑between;
+    align‑items:center;
+    margin‑bottom:10px;
+}
+#expandBtn{
+    width:auto;
+    padding:6px 12px;
+    font‑size:13px;
+}
+.preview-card pre{
+    white-space:pre-wrap;
+    font-size:13px;
+    line-height:1.4;
+}
+.preview-card img{
+    max-width:100%;
+}
+.preview-card video,.preview-card audio{
+    width:100%;
+}
+@media(max-width:600px){
+    h1{font-size:22px;}
+    .card{padding:18px;}
+    .btn-row{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>LocalCipher</h1>
+    <div class="subtitle">Offline File Encryptor｜Multi‑round encryption · Decrypt Preview</div>
+    <div class="message" id="msg"></div>
+    <div class="tip-box" id="perfTip">Select file and encryption rounds, performance tips show here.</div>
+
+    <div class="card">
+        <h3>Encrypt: Upload any file</h3>
+        <input type="file" id="fileInput">
+        <select id="roundSelect">
+            <option value="4">4 rounds｜Fast for large files</option>
+            <option value="6">6 rounds｜Balanced</option>
+            <option value="8" selected>8 rounds｜Recommended balance</option>
+            <option value="10">10 rounds｜High security, slow</option>
+            <option value="12">12 rounds｜Max security, for small files &lt;10MB</option>
+        </select>
+        <input type="password" id="pwdEnc" placeholder="Set encryption password">
+        <div class="btn-row">
+            <button id="btnEncTxt">Export TXT</button>
+            <button id="btnEncPng">Export PNG Image</button>
+            <button id="btnEncCssHtml">Export CSS‑HTML</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Decrypt: Import TXT / PNG / HTML carrier</h3>
+        <input type="file" id="decInput">
+        <input type="password" id="pwdDec" placeholder="Input decryption password">
+        <button id="btnDec">Decrypt & Download Original File</button>
+        <div class="preview-card" id="previewBox" style="display:none;">
+            <div class="preview‑header">
+                <span>Preview</span>
+                <button id="expandBtn">Expand Full‑View</button>
+            </div>
+            <div id="previewInner"></div>
+        </div>
+    </div>
+</div>
+
+<canvas id="workCanvas" style="display:none;"></canvas>
+
+<script>
+const msgEl = document.getElementById('msg');
+const perfTip = document.getElementById('perfTip');
+const previewBox = document.getElementById('previewBox');
+const previewInner = document.getElementById('previewInner');
+const expandBtn = document.getElementById('expandBtn');
+
+let lastPreviewUrl = null;
+let currentDecodedBytes = null;
+let currentFileName = "";
+
+function clearPreview(){
+    if(lastPreviewUrl){
+        URL.revokeObjectURL(lastPreviewUrl);
+        lastPreviewUrl=null;
+    }
+    previewInner.innerHTML="";
+    previewBox.style.display="none";
+    currentDecodedBytes=null;
+    currentFileName="";
+}
+
+function toast(s, isWarn=false){
+    msgEl.textContent = s;
+    msgEl.className = isWarn ? "message warn" : "message info";
+}
+
+const BLOCK_SIZE = 256;
+const IV_LEN = 16;
+const PWD_ITER = 2048;
+const SIZE_LIMIT = 6 * 1024 * 1024;
+
+function passwordSeed(pass){
+    let arr = new Uint8Array(32);
+    let s = pass;
+    for(let iter=0;iter<PWD_ITER;iter++){
+        let sum = 0;
+        for(let c of s) sum+=c.charCodeAt(0);
+        for(let i=0;i<32;i++){
+            arr[i] = (arr[i] + sum + i + iter) & 0xff;
+        }
+        s = btoa(String.fromCharCode(...arr));
+    }
+    return arr;
+}
+
+function genSBox(seed){
+    const s = new Uint8Array(256);
+    const inv = new Uint8Array(256);
+    for(let i=0;i<256;i++) s[i]=i;
+    let r = 0;
+    for(let i=255;i>0;i--){
+        r = (r + seed[i%seed.length] + s[i]) % (i+1);
+        [s[i],s[r]] = [s[r],s[i]];
+    }
+    for(let i=0;i<256;i++) inv[s[i]] = i;
+    return {s,inv};
+}
+
+function rotLeft(block, shift){
+    const len = block.length;
+    const out = new Uint8Array(len);
+    for(let i=0;i<len;i++) out[i] = block[(i+shift)%len];
+    return out;
+}
+function rotRight(block, shift){
+    const len = block.length;
+    const out = new Uint8Array(len);
+    for(let i=0;i<len;i++) out[i] = block[(i - shift + len)%len];
+    return out;
+}
+
+function streamMix(data, seed){
+    for(let i=1;i<data.length;i++) data[i] ^= (data[i-1] + seed[i%seed.length]) &0xff;
+    return data;
+}
+function streamUnMix(data, seed){
+    for(let i=data.length‑1;i>=1;i--) data[i] ^= (data[i‑1] + seed[i%seed.length]) &0xff;
+    return data;
+}
+
+function customEncrypt(rawBytes, password, ROUND){
+    const seedMain = passwordSeed(password);
+    const iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
+    let data = new Uint8Array(rawBytes.length);
+    data.set(rawBytes);
+    for(let i=0;i<data.length;i++) data[i] ^= iv[i%iv.length];
+
+    const blocks = [];
+    for(let offset=0;offset<data.length;offset+=BLOCK_SIZE){
+        blocks.push(data.slice(offset,offset+BLOCK_SIZE));
+    }
+
+    for(let r=0;r<ROUND;r++){
+        const roundSeed = new Uint8Array(seedMain.length);
+        for(let i=0;i<seedMain.length;i++) roundSeed[i]=(seedMain[i]+r+iv[i%iv.length])&0xff;
+        const {s} = genSBox(roundSeed);
+        for(let bIdx=0;bIdx<blocks.length;bIdx++){
+            let blk = blocks[bIdx];
+            for(let i=0;i<blk.length;i++) blk[i]=s[blk[i]];
+            blk = rotLeft(blk,(r+3)%blk.length);
+            blocks[bIdx]=blk;
+        }
+        for(let bIdx=1;bIdx<blocks.length;bIdx++){
+            const prev = blocks[bIdx‑1];
+            const cur = blocks[bIdx];
+            for(let i=0;i<cur.length;i++) cur[i]^=prev[i%prev.length];
+        }
+    }
+    for(let b of blocks) streamMix(b,seedMain);
+
+    let totalLen=0;
+    blocks.forEach(b=>totalLen+=b.length);
+    const combined = new Uint8Array(totalLen);
+    let ptr=0;
+    for(let blk of blocks){combined.set(blk,ptr);ptr+=blk.length;}
+
+    const out = new Uint8Array(iv.length +1 + combined.length);
+    out.set(iv,0);
+    out[IV_LEN] = ROUND;
+    out.set(combined, IV_LEN+1);
+    return out;
+}
+
+function customDecrypt(encTotalBytes, password){
+    const seedMain = passwordSeed(password);
+    const iv = encTotalBytes.slice(0,IV_LEN);
+    const ROUND = encTotalBytes[IV_LEN];
+    const cipherData = encTotalBytes.slice(IV_LEN+1);
+
+    const blocks = [];
+    for(let offset=0;offset<cipherData.length;offset+=BLOCK_SIZE){
+        blocks.push(cipherData.slice(offset,offset+BLOCK_SIZE));
+    }
+    for(let b of blocks) streamUnMix(b,seedMain);
+
+    for(let r=ROUND‑1;r>=0;r--){
+        for(let bIdx=blocks.length‑1;bIdx>=1;bIdx--){
+            const prev = blocks[bIdx‑1];
+            const cur = blocks[bIdx];
+            for(let i=0;i<cur.length;i++) cur[i]^=prev[i%prev.length];
+        }
+        const roundSeed = new Uint8Array(seedMain.length);
+        for(let i=0;i<seedMain.length;i++) roundSeed[i]=(seedMain[i]+r+iv[i%iv.length])&0xff;
+        const {inv} = genSBox(roundSeed);
+        for(let bIdx=0;bIdx<blocks.length;bIdx++){
+            let blk = blocks[bIdx];
+            blk = rotRight(blk,(r+3)%blk.length);
+            for(let i=0;i<blk.length;i++) blk[i]=inv[blk[i]];
+            blocks[bIdx]=blk;
+        }
+    }
+
+    let ptr=0;
+    const out = new Uint8Array(cipherData.length);
+    for(let b of blocks){out.set(b,ptr);ptr+=b.length;}
+    for(let i=0;i<out.length;i++) out[i]^=iv[i%iv.length];
+    return out;
+}
+
+async function fileToArrayBuffer(file){return await file.arrayBuffer();}
+
+async function binaryToPng(binData){
+    const canvas = document.getElementById("workCanvas");
+    const 
