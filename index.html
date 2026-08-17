@@ -160,17 +160,17 @@ button:disabled{
     <h1>LocalCipher</h1>
     <div class="subtitle">Offline File Encryptor · Multi‑round encryption · Decrypt Preview</div>
     <div class="message" id="msg"></div>
-    <div class="tip-box" id="perfTip">Select file and encryption rounds, performance tips show here.</div>
+    <div class="tip-box" id="perfTip">Select file and encryption rounds, performance tips show here. <strong>Android建议4‑6轮，高轮会卡死</strong></div>
 
     <div class="card">
         <h3>Encrypt: Upload any file</h3>
         <input type="file" id="fileInput">
         <select id="roundSelect">
-            <option value="4" selected>4 rounds｜Fast for large files</option>
+            <option value="4" selected>4 rounds｜Fast for large files【Android推荐】</option>
             <option value="6">6 rounds｜Balanced</option>
             <option value="8">8 rounds｜Recommended balance</option>
-            <option value="10">10 rounds｜High security(slow)</option>
-            <option value="12">12 rounds｜Max security(very slow)</option>
+            <option value="10">10 rounds｜High security(slow) ⚠️安卓容易卡死</option>
+            <option value="12">12 rounds｜Max security(very slow) ⚠️不要在手机用</option>
         </select>
         <input type="password" id="pwdEnc" placeholder="Set encryption password">
         <button id="btnEncTxt">Export TXT</button>
@@ -224,8 +224,14 @@ function toast(s, isWarn=false){
 
 const BLOCK_SIZE = 256;
 const IV_LEN = 16;
-const PWD_ITER = 12; // 降低迭代次数，修复移动端栈溢出！！
+const PWD_ITER = 8;
 const SIZE_LIMIT = 6 * 1024 * 1024;
+
+// 内联Worker字符串，无需额外worker文件
+const workerCode = `
+const BLOCK_SIZE = 256;
+const IV_LEN = 16;
+const PWD_ITER = 8;
 
 function getPasswordSeed(password){
     const arr = new Uint8Array(32);
@@ -355,10 +361,7 @@ async function customDecrypt(encTotalBytes, password){
     return out;
 }
 
-async function fileToArrayBuffer(file){return await file.arrayBuffer();}
-
-async function binaryToPng(binData){
-    const canvas = document.getElementById("workCanvas");
-    const ctx = canvas.getContext("2d");
-    const totalPixel = Math.ceil(binData.length /3);
-    const w = Math.ceil(Math.sqrt(
+self.onmessage = async (e)=>{
+    try{
+        if(e.data.type==="encrypt"){
+            const res = await customEncrypt(e.data.bytes, e.data
