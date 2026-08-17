@@ -60,9 +60,13 @@ h1{
     color:#f3f4f6;
 }
 
-/* 隐藏原生文件输入 */
+/* 安全隐藏file输入，禁止display:none */
 .input-file-hidden{
-    display:none;
+    position:absolute;
+    opacity:0;
+    width:1px;
+    height:1px;
+    left:-9999px;
 }
 .btn-blue{
     width:100%;
@@ -74,7 +78,6 @@ h1{
     font-size:15px;
     cursor:pointer;
     margin-bottom:10px;
-    display:block;
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
@@ -140,14 +143,14 @@ h1{
     <div class="card">
         <h3>编码 文件转为PNG图片</h3>
         <input type="file" id="encFile" class="input-file-hidden">
-        <label for="encFile" class="btn-blue" id="btnSelectEnc">选择待编码文件</label>
+        <button class="btn-blue" id="btnSelectEnc">选择待编码文件</button>
         <button class="btn-blue" id="btnEncode">编码并下载PNG</button>
     </div>
 
     <div class="card">
         <h3>解码 PNG恢复原文件</h3>
         <input type="file" id="decFile" accept=".png" class="input-file-hidden">
-        <label for="decFile" class="btn-blue" id="btnSelectDec">选择PNG图片</label>
+        <button class="btn-blue" id="btnSelectDec">选择PNG图片</button>
         <button class="btn-blue" id="btnDecode">解码恢复文件</button>
     </div>
 
@@ -189,7 +192,7 @@ const TEXT_DEC_DEFAULT = "选择PNG图片";
 
 let palette = [];
 
-// 截断长文件名工具
+//截断长文件名
 function truncName(name, maxLen=22){
     if(name.length <= maxLen) return name;
     const ext = name.lastIndexOf('.');
@@ -198,6 +201,16 @@ function truncName(name, maxLen=22){
     return name.slice(0, maxLen‑suffix.length‑2)+'…'+suffix;
 }
 
+//按钮点击直接唤起文件框，在用户手势内部，绕过安全拦截
+btnSelectEnc.onclick = function(){
+    encFile.value = ''; //清空，允许重复选同一个文件
+    encFile.click();
+};
+btnSelectDec.onclick = function(){
+    decFile.value = '';
+    decFile.click();
+};
+
 encFile.addEventListener('change', function(){
     if(this.files && this.files.length > 0){
         btnSelectEnc.textContent = truncName(this.files[0].name);
@@ -205,7 +218,6 @@ encFile.addEventListener('change', function(){
         btnSelectEnc.textContent = TEXT_ENC_DEFAULT;
     }
 });
-
 decFile.addEventListener('change', function(){
     if(this.files && this.files.length > 0){
         btnSelectDec.textContent = truncName(this.files[0].name);
@@ -324,7 +336,6 @@ function postProcessImage(sourceCanvas){
         if(r===0&&g===0&&b===0){
             data[i]=255;data[i+1]=255;data[i+2]=255;
         }
-        //红色判定：r高 g=b接近0
         if(r>120 && g<60 && b<60){
             data[i]=0;data[i+1]=0;data[i+2]=255;
         }
@@ -370,10 +381,4 @@ btnEncode.onclick=async ()=>{
         const total = bitStream.length;
         const side = Math.ceil(Math.sqrt(total));
         canvas.width=side; canvas.height=side;
-        ctx.clearRect(0,0,side,side);
-
-        for(let i=0;i<total;i++){
-            const x = i % side;
-            const y = Math.floor(i / side);
-            const c = palette[bitStream[i]];
-            ctx.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
+        ctx.clearRect(0,
