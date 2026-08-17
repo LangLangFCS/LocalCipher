@@ -3,26 +3,119 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LocalCipher‑256 standalone</title>
+<title>LocalCipher Standalone</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
-body{background:#0f1117;color:#e5e7eb;padding:20px 14px}
-.wrap{max-width:640px;margin:0 auto}
-h1{text-align:center;font-size:22px;margin-bottom:16px}
-.card{background:#181b23;border:1px solid #272b35;border-radius:14px;padding:18px;margin-bottom:14px}
-h3{margin-bottom:10px;font-size:16px}
-.btn{width:100%;padding:11px;border:none;border-radius:9px;background:#2563eb;color:#fff;font-size:15px;margin-bottom:9px;cursor:pointer}
-.btn:disabled{background:#2d323d;color:#999;cursor:not-allowed}
-.msg{min-height:26px;text-align:center;color:#93c5fd;margin:8px 0}
-.err{color:#ff7878}
-#fileEnc, #fileDec{position:absolute;opacity:0;width:1px;height:1px;overflow:hidden}
-.preview{background:#121620;border-radius:10px;padding:12px;margin-top:10px;display:none}
-.preview img{max-width:100%}
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:system-ui, -apple-system, sans-serif;
+}
+body{
+    background:#0f1117;
+    color:#e5e7eb;
+    padding:24px 16px;
+    min-height:100vh;
+}
+.wrap{
+    max-width:660px;
+    margin:0 auto;
+}
+h1{
+    text-align:center;
+    font-size:22px;
+    margin-bottom:16px;
+}
+.card{
+    background:#181b23;
+    border:1px solid #272b35;
+    border-radius:14px;
+    padding:20px;
+    margin-bottom:16px;
+}
+h3{
+    margin-bottom:12px;
+    font-size:16px;
+}
+.radio-row{
+    display:flex;
+    gap:28px;
+    margin-bottom:14px;
+    flex-wrap:wrap;
+}
+.radio-item{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    cursor:pointer;
+}
+.btn{
+    width:100%;
+    padding:12px;
+    border:none;
+    border-radius:10px;
+    background:#2563eb;
+    color:#fff;
+    font-size:15px;
+    margin-bottom:10px;
+    cursor:pointer;
+}
+.btn:disabled{
+    background:#2d323d;
+    color:#999;
+    cursor:not-allowed;
+}
+.msg{
+    min-height:28px;
+    text-align:center;
+    color:#93c5fd;
+    margin:10px 0;
+}
+.err{
+    color:#ff7878;
+}
+#fileEnc, #fileDec{
+    position:absolute;
+    opacity:0;
+    width:1px;
+    height:1px;
+    overflow:hidden;
+}
+.preview{
+    background:#121620;
+    border-radius:10px;
+    padding:12px;
+    margin-top:10px;
+    display:none;
+}
+.preview img{
+    max-width:100%;
+}
+.mode-tip{
+    font-size:13px;
+    color:#aaaaaa;
+    margin-bottom:8px;
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>LocalCipher 256色</h1>
+<h1>LocalCipher</h1>
+
+<div class="card">
+<h3>选择编码模式</h3>
+<div class="radio-row">
+    <div class="radio-item">
+        <input type="radio" name="mode" id="m16" value="16" checked>
+        <label for="m16">16色 (4bit)</label>
+    </div>
+    <div class="radio-item">
+        <input type="radio" name="mode" id="m64" value="64">
+        <label for="m64">64色 (6bit)</label>
+    </div>
+</div>
+<div class="mode-tip" id="modeTip">16色：兼容性优先</div>
+</div>
 
 <div class="card">
 <h3>编码 文件→PNG</h3>
@@ -62,6 +155,7 @@ const cvsWork = $("#cvsWork");
 const ctxWork = cvsWork.getContext("2d");
 const cvsMirror = $("#cvsMirror");
 const ctxMirror = cvsMirror.getContext("2d");
+const modeTip = $("#modeTip");
 
 const DEF_ENC = "选择文件";
 const DEF_DEC = "选择PNG图片";
@@ -84,13 +178,23 @@ fileDec.onchange = function(){
     labDec.textContent = this.files.length? shortName(this.files[0].name):DEF_DEC;
 };
 
-// 256色调色板 0‑255，R=index，G=0,B=0
-function makePalette(){
-    let p = [];
-    for(let i=0;i<256;i++) p.push({r:i,g:0,b:0});
+// 获取当前模式
+function getMode(){
+    return document.querySelector('input[name="mode"]:checked').value;
+}
+// 调色板
+function makePalette(mode){
+    let p=[];
+    if(mode==="16"){
+        for(let i=0;i<16;i++) p.push({r:(i&0x03)*85,g:((i>>2)&0x03)*85,b:0});
+        modeTip.textContent="16色(4bit)：兼容性优先";
+    }else{
+        for(let i=0;i<64;i++) p.push({r:(i&0x07)*36,g:((i>>3)&0x07)*36,b:0});
+        modeTip.textContent="64色(6bit)：图片体积更小";
+    }
     return p;
 }
-const palette = makePalette();
+document.querySelectorAll('input[name="mode"]').forEach(r=>r.addEventListener('change',()=>makePalette(getMode())));
 
 // 打包：[文件名长度2字节][文件名][文件二进制]
 function buildPayload(filename, bin){
@@ -131,20 +235,70 @@ function postProcess(canvas){
     return cvsMirror;
 }
 
+// 字节转bit流
+function bytesToBits(arr,mode){
+    let stream=[];
+    if(mode==="16"){
+        for(let b of arr){
+            stream.push((b>>4)&0x0F);
+            stream.push(b&0x0F);
+        }
+    }else{
+        let acc=0, cnt=0;
+        for(let b of arr){
+            acc = (acc<<8)|b;
+            cnt +=8;
+            while(cnt>=6){
+                cnt -=6;
+                stream.push((acc>>cnt)&0x3F);
+            }
+        }
+        stream.unshift(cnt);
+    }
+    return stream;
+}
+// bit流转字节
+function bitsToBytes(stream,mode){
+    let out=[];
+    if(mode==="16"){
+        for(let i=0;i<stream.length;i+=2){
+            const hi=stream[i], lo=stream[i+1];
+            out.push((hi<<4)|lo);
+        }
+    }else{
+        const pad=stream[0];
+        const data=stream.slice(1);
+        let acc=0,cnt=0;
+        for(let v of data){
+            acc=(acc<<6)|v;
+            cnt+=6;
+            while(cnt>=8){
+                cnt -=8;
+                out.push((acc>>cnt)&0xFF);
+            }
+        }
+        if(pad>0) out.pop();
+    }
+    return new Uint8Array(out);
+}
+
 btnEnc.onclick = async function(){
     const f = fileEnc.files[0];
     if(!f) return toast("请先选择文件",true);
     btnEnc.disabled=true; btnEnc.textContent="编码中…"; toast("");
     try{
+        const mode = getMode();
+        const palette = makePalette(mode);
         const arr = new Uint8Array(await f.arrayBuffer());
         const payload = buildPayload(f.name, arr);
-        const side = Math.ceil(Math.sqrt(payload.length));
+        const bitStream = bytesToBits(payload, mode);
+
+        const side = Math.ceil(Math.sqrt(bitStream.length));
         cvsWork.width=side; cvsWork.height=side;
         ctxWork.clearRect(0,0,side,side);
 
-        for(let i=0;i<payload.length;i++){
-            const px = payload[i];
-            const c = palette[px];
+        for(let i=0;i<bitStream.length;i++){
+            const c = palette[bitStream[i]];
             const x = i%side;
             const y = Math.floor(i/side);
             ctxWork.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
@@ -154,7 +308,7 @@ btnEnc.onclick = async function(){
         const blob = await new Promise(r=>final.toBlob(r,"image/png"));
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href=url; a.download=f.name+".256c.png";
+        a.href=url; a.download=f.name+"."+mode+"c.png";
         document.body.appendChild(a); a.click(); a.remove();
 
         prevImg.src=url; previewBox.style.display="block";
@@ -172,15 +326,15 @@ btnDec.onclick = async function(){
     if(!f) return toast("请先选择PNG",true);
     btnDec.disabled=true; btnDec.textContent="解码中…"; toast("");
     try{
+        const mode = getMode();
+        const palette = makePalette(mode);
         const img = new Image();
         await new Promise((ok,err)=>{img.onload=ok;img.onerror=err;img.src=URL.createObjectURL(f);});
         const w=img.width, h=img.height;
         cvsWork.width=w; cvsWork.height=h;
         ctxWork.drawImage(img,0,0);
-        const id = ctxWork.getImageData(0,0,w,h);
-        const d = id.data;
 
-        // 镜像复原
+        //镜像复原
         cvsMirror.width=w; cvsMirror.height=h;
         ctxMirror.save();
         ctxMirror.translate(w,0); ctxMirror.scale(-1,1);
@@ -188,20 +342,27 @@ btnDec.onclick = async function(){
         ctxMirror.restore();
         const revData = ctxMirror.getImageData(0,0,w,h).data;
 
-        // 交换行1与17复原
+        //交换行1与17复原
         if(h>17){
             const r1 = w*4, r17 = 17*w*4;
             for(let i=0;i<w*4;i++){
                 let t=revData[r1+i]; revData[r1+i]=revData[r17+i]; revData[r17+i]=t;
             }
         }
-
-        // 取R通道作为字节
-        const out = [];
+        //取像素匹配调色板得到索引流
+        const bitStream=[];
         for(let p=0;p<revData.length;p+=4){
-            out.push(revData[p]);
+            const r=revData[p],g=revData[p+1],b=revData[p+2];
+            let best=0,minD=1e9;
+            for(let idx=0;idx<palette.length;idx++){
+                const c=palette[idx];
+                const d=(r‑c.r)**2+(g‑c.g)**2+(b‑c.b)**2;
+                if(d<minD){minD=d;best=idx;}
+            }
+            bitStream.push(best);
         }
-        const res = parsePayload(new Uint8Array(out));
+        const rawBuf = bitsToBytes(bitStream,mode);
+        const res = parsePayload(rawBuf);
         const blob = new Blob([res.data]);
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -217,6 +378,4 @@ btnDec.onclick = async function(){
         btnDec.disabled=false; btnDec.textContent="解码恢复文件";
     }
 };
-</script>
-</body>
-</html>
+ma
