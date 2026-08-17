@@ -144,27 +144,18 @@ button:disabled{
 <body>
 <div class="container">
     <h1>LocalCipher PNG</h1>
-    <div class="subtitle">Offline File Encryptor · PNG Only</div>
+    <div class="subtitle">File‑to‑16color image + mirror flip</div>
     <div class="message" id="msg"></div>
-    <div class="tip-box" id="perfTip">Select a file and password, then encrypt to PNG.</div>
+    <div class="tip-box" id="perfTip">Select file, generate 16‑color PNG with horizontal mirror flip.</div>
 
     <div class="card">
-        <h3>Encrypt to PNG</h3>
+        <h3>File To Image</h3>
         <input type="file" id="fileInput">
-        <select id="roundSelect">
-            <option value="4" selected>4 rounds｜Fast</option>
-            <option value="6">6 rounds｜Balanced</option>
-            <option value="8">8 rounds｜Slow</option>
-        </select>
-        <input type="password" id="pwdEnc" placeholder="Set encryption password">
-        <button id="btnEncPng">Export PNG Image</button>
+        <button id="btnGen">Generate & Download PNG</button>
     </div>
 
     <div class="card">
-        <h3>Decrypt PNG</h3>
-        <input type="file" id="decInput" accept=".png">
-        <input type="password" id="pwdDec" placeholder="Input decryption password">
-        <button id="btnDec">Decrypt & Download Original</button>
+        <h3>Preview</h3>
         <div class="preview-card" id="previewBox" style="display:none;">
             <div id="previewInner"></div>
         </div>
@@ -178,8 +169,26 @@ const msgEl = document.getElementById('msg');
 const perfTip = document.getElementById('perfTip');
 const previewBox = document.getElementById('previewBox');
 const previewInner = document.getElementById('previewInner');
+const canvas = document.getElementById('workCanvas');
+const ctx = canvas.getContext('2d');
+const fileInput = document.getElementById('fileInput');
+const btnGen = document.getElementById('btnGen');
 
 let lastPreviewUrl = null;
+
+// 16种颜色，对应0‑F 16进制每4bit
+const palette16 = [
+    "#000000", "#1a1a2e", "#16213e", "#0f3460",
+    "#533483", "#e94560", "#ff6b6b", "#ffd93d",
+    "#6bcb77", "#4d96ff", "#9d65c9", "#ff9de2",
+    "#48dbfb", "#1dd1a1", "#ff9f43", "#ffffff"
+];
+
+function toast(s, isWarn=false){
+    msgEl.textContent = s;
+    msgEl.className = isWarn ? "message warn" : "message info";
+    void msgEl.offsetHeight;
+}
 
 function clearPreview(){
     if(lastPreviewUrl){
@@ -190,176 +199,82 @@ function clearPreview(){
     previewBox.style.display="none";
 }
 
-function toast(s, isWarn=false){
-    msgEl.textContent = s;
-    msgEl.className = isWarn ? "message warn" : "message info";
-    void msgEl.offsetHeight;
-}
-
-// inline WebWorker，不需要独立worker文件
-const workerCode = `
-const BLOCK_SIZE = 256;
-const IV_LEN = 16;
-const PWD_ITER = 8;
-
-function getPasswordSeed(password){
-    const arr = new Uint8Array(32);
-    let s = password;
-    for(let iter=0;iter<PWD_ITER;iter++){
-        let sum = 0;
-        for(let c of s) sum+=c.charCodeAt(0);
-        for(let i=0;i<32;i++){
-            arr[i] = (arr[i] + sum + iter) & 0xff;
-        }
-        s = btoa(String.fromCharCode(...arr));
+fileInput.addEventListener('change',()=>{
+    const f = fileInput.files[0];
+    if(!f){
+        perfTip.innerText="Select file, generate 16‑color PNG with horizontal mirror flip.";
+        return;
     }
-    return arr;
-}
+    perfTip.innerText=`File: ${f.name} | ${(f.size/1024).toFixed(2)}KB`;
+});
 
-function genSBox(seed){
-    const s = new Uint8Array(256);
-    const inv = new Uint8Array(256);
-    for(let i=0;i<256;i++) s[i]=i;
-    let r = 0;
-    for(let i=255;i>0;i--){
-        r = (r + seed[i%seed.length] + s[i]) % (i+1);
-        [s[i], s[r]] = [s[r], s[i]];
+btnGen.onclick = async ()=>{
+    clearPreview();
+    const file = fileInput.files[0];
+    if(!file){
+        toast("Please choose a file",true);
+        return;
     }
-    for(let i=0;i<256;i++) inv[s[i]] = i;
-    return {s,inv};
-}
-
-function rotLeft(block, shift){
-    const len = block.length;
-    const out = new Uint8Array(len);
-    for(let i=0;i<len;i++) out[i] = block[(i+shift)%len];
-    return out;
-}
-
-function rotRight(block, shift){
-    const len = block.length;
-    const out = new Uint8Array(len);
-    for(let i=0;i<len;i++) out[i] = block[(i - shift + len)%len];
-    return out;
-}
-
-function streamMix(data, seed){
-    for(let i=1;i<data.length;i++) data[i] ^= (data[i-1] + seed[i%seed.length]) &0xff;
-    return data;
-}
-
-function streamUnMix(data, seed){
-    for(let i=data.length-1;i>=1;i--) data[i] ^= (data[i-1] + seed[i%seed.length]) &0xff;
-    return data;
-}
-
-async function customEncrypt(rawBytes, password, ROUND){
-    const seedMain = getPasswordSeed(password);
-    const iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
-    let data = new Uint8Array(rawBytes.length);
-    data.set(rawBytes);
-    for(let i=0;i<data.length;i++) data[i] ^= iv[i%iv.length];
-
-    const blocks = [];
-    for(let offset=0;offset<data.length;offset+=BLOCK_SIZE){
-        blocks.push(data.slice(offset,offset+BLOCK_SIZE));
-    }
-
-    for(let r=0;r<ROUND;r++){
-        const roundSeed = new Uint8Array(seedMain.length);
-        for(let i=0;i<seedMain.length;i++) roundSeed[i]=(seedMain[i]+r+iv[i%iv.length])&0xff;
-        const {s} = genSBox(roundSeed);
-        for(let bIdx=0;bIdx<blocks.length;bIdx++){
-            let blk = blocks[bIdx];
-            for(let i=0;i<blk.length;i++) blk[i]=s[blk[i]];
-            blk = rotLeft(blk,(r+3)%blk.length);
-            blocks[bIdx]=blk;
-        }
-        for(let bIdx=1;bIdx<blocks.length;bIdx++){
-            const prev = blocks[bIdx-1];
-            const cur = blocks[bIdx];
-            for(let i=0;i<cur.length;i++) cur[i]^=prev[i%prev.length];
-        }
-    }
-    for(let b of blocks) streamMix(b,seedMain);
-
-    let totalLen=0;
-    blocks.forEach(b=>totalLen+=b.length);
-    const combined = new Uint8Array(totalLen);
-    let ptr=0;
-    for(let blk of blocks){combined.set(blk,ptr);ptr+=blk.length;}
-
-    const out = new Uint8Array(iv.length +1 + combined.length);
-    out.set(iv,0);
-    out[IV_LEN] = ROUND;
-    out.set(combined, IV_LEN+1);
-    return out;
-}
-
-async function customDecrypt(encTotalBytes, password){
-    const seedMain = getPasswordSeed(password);
-    const iv = encTotalBytes.slice(0,IV_LEN);
-    const ROUND = encTotalBytes[IV_LEN];
-    const cipherData = encTotalBytes.slice(IV_LEN+1);
-
-    const blocks = [];
-    for(let offset=0;offset<cipherData.length;offset+=BLOCK_SIZE){
-        blocks.push(cipherData.slice(offset,offset+BLOCK_SIZE));
-    }
-    for(let b of blocks) streamUnMix(b,seedMain);
-
-    for(let r=ROUND-1;r>=0;r--){
-        for(let bIdx=blocks.length-1;bIdx>=1;bIdx--){
-            const prev = blocks[bIdx-1];
-            const cur = blocks[bIdx];
-            for(let i=0;i<cur.length;i++) cur[i]^=prev[i%prev.length];
-        }
-        const roundSeed = new Uint8Array(seedMain.length);
-        for(let i=0;i<seedMain.length;i++) roundSeed[i]=(seedMain[i]+r+iv[i%iv.length])&0xff;
-        const {inv} = genSBox(roundSeed);
-        for(let bIdx=0;bIdx<blocks.length;bIdx++){
-            let blk = blocks[bIdx];
-            blk = rotRight(blk,(r+3)%blk.length);
-            for(let i=0;i<blk.length;i++) blk[i]=inv[blk[i]];
-            blocks[bIdx]=blk;
-        }
-    }
-
-    let ptr=0;
-    const out = new Uint8Array(cipherData.length);
-    for(let b of blocks){out.set(b,ptr);ptr+=b.length;}
-    for(let i=0;i<out.length;i++) out[i]^=iv[i%iv.length];
-    return out;
-}
-
-self.onmessage = async (e)=>{
+    btnGen.disabled = true;
+    toast("Reading file…");
     try{
-        if(e.data.type==="encrypt"){
-            const res = await customEncrypt(e.data.data, e.data.pwd, e.data.round);
-            self.postMessage({type:"encrypt-done", payload:res}, [res.buffer]);
-        }else if(e.data.type==="decrypt"){
-            const res = await customDecrypt(e.data.data, e.data.pwd);
-            self.postMessage({type:"decrypt-done", payload:res}, [res.buffer]);
+        const buf = await file.arrayBuffer();
+        const uint = new Uint8Array(buf);
+
+        // 把每个字节拆成高4bit、低4bit，每个取值0‑15
+        const nibbles = [];
+        for(let i=0;i<uint.length;i++){
+            const b = uint[i];
+            const hi = (b >> 4) & 0x0F;
+            const lo = b & 0x0F;
+            nibbles.push(hi, lo);
         }
+
+        // 计算正方形画布边长
+        const totalPixels = nibbles.length;
+        const side = Math.ceil(Math.sqrt(totalPixels));
+        canvas.width = side;
+        canvas.height = side;
+        ctx.clearRect(0,0,side,side);
+
+        // 填充像素，取调色板颜色
+        for(let idx=0;idx<totalPixels;idx++){
+            const x = idx % side;
+            const y = Math.floor(idx / side);
+            const cIndex = nibbles[idx];
+            ctx.fillStyle = palette16[cIndex];
+            ctx.fillRect(x,y,1,1);
+        }
+
+        // ==========水平镜像反转==========
+        ctx.save();
+        ctx.scale(-1,1);
+        ctx.drawImage(canvas, -side, 0, side, side);
+        ctx.restore();
+
+        // 导出PNG
+        const pngUrl = canvas.toDataURL("image/png");
+        const a = document.createElement('a');
+        a.href = pngUrl;
+        a.download = file.name + "_16color_mirror.png";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        // 预览
+        const img = new Image();
+        img.src = pngUrl;
+        lastPreviewUrl = pngUrl;
+        previewInner.appendChild(img);
+        previewBox.style.display="block";
+        toast("Generated done, downloaded");
     }catch(err){
-        self.postMessage({type:"error", msg:err.message});
+        toast("Error: "+err.message,true);
+        console.error(err);
+    }finally{
+        btnGen.disabled = false;
     }
 };
-`;
-
-const workerBlob = new Blob([workerCode], {type:"application/javascript"});
-const worker = new Worker(URL.createObjectURL(workerBlob));
-
-async function binaryToPng(binData){
-    const canvas = document.getElementById("workCanvas");
-    const ctx = canvas.getContext("2d");
-    const totalPixel = Math.ceil(binData.length /3);
-    const w = Math.ceil(Math.sqrt(totalPixel));
-    const h = Math.ceil(totalPixel /w);
-    canvas.width=w;canvas.height=h;
-    const imgData = ctx.createImageData(w,h);
-    const pix = imgData.data;
-    let bytePtr=0;
-    for(let pixIdx=0;pixIdx<pix.length;pixIdx+=4){
-        if(bytePtr>=binData.length){
-            pix[pixIdx]=0;pix[pixIdx+1]=0;pix[pixIdx+2]=0
+</script>
+</body>
+</html>
