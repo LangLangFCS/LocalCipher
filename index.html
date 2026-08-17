@@ -74,6 +74,9 @@ h1{
     font-size:15px;
     cursor:pointer;
     margin-bottom:10px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
 }
 .btn-blue:hover:not(:disabled){
     background:#1d4ed8;
@@ -122,11 +125,11 @@ h1{
         <h3>选择模式</h3>
         <div class="radio-wrap">
             <div class="radio-item">
-                <input type="radio" name="mode" id="m16" value="16" checked onclick="updatePalette()">
+                <input type="radio" name="mode" id="m16" value="16" checked>
                 <label for="m16">16色 4bit（稳定优先）</label>
             </div>
             <div class="radio-item">
-                <input type="radio" name="mode" id="m64" value="64" onclick="updatePalette()">
+                <input type="radio" name="mode" id="m64" value="64">
                 <label for="m64">64色 6bit（体积更小）</label>
             </div>
         </div>
@@ -185,31 +188,45 @@ const TEXT_DEC_DEFAULT = "选择PNG图片";
 
 let palette = [];
 
-//蓝色按钮触发原生文件选择
+// 截断长文件名工具
+function truncName(name, maxLen=22){
+    if(name.length <= maxLen) return name;
+    const ext = name.lastIndexOf('.');
+    if(ext === -1) return name.slice(0,maxLen‑3)+'…';
+    const suffix = name.slice(ext);
+    return name.slice(0, maxLen‑suffix.length‑2)+'…'+suffix;
+}
+
+//按钮唤起文件弹窗
 btnSelectEnc.onclick = ()=> encFile.click();
 btnSelectDec.onclick = ()=> decFile.click();
 
-//选完文件，把文件名显示到按钮
-encFile.onchange = function(){
-    if(this.files.length>0){
-        btnSelectEnc.textContent = this.files[0].name;
+//改用addEventListener，兼容性修复
+encFile.addEventListener('change', function(){
+    if(this.files && this.files.length > 0){
+        btnSelectEnc.textContent = truncName(this.files[0].name);
     }else{
         btnSelectEnc.textContent = TEXT_ENC_DEFAULT;
     }
-};
-decFile.onchange = function(){
-    if(this.files.length>0){
-        btnSelectDec.textContent = this.files[0].name;
+});
+
+decFile.addEventListener('change', function(){
+    if(this.files && this.files.length > 0){
+        btnSelectDec.textContent = truncName(this.files[0].name);
     }else{
         btnSelectDec.textContent = TEXT_DEC_DEFAULT;
     }
-};
+});
+
+document.querySelectorAll('input[name="mode"]').forEach(r=>{
+    r.addEventListener('change', updatePalette);
+});
 
 function getMode(){
     return document.querySelector('input[name="mode"]:checked').value;
 }
 
-window.updatePalette = function(){
+function updatePalette(){
     const mode = getMode();
     palette = [];
     if(mode === "16"){
@@ -362,17 +379,4 @@ btnEncode.onclick=async ()=>{
         for(let i=0;i<total;i++){
             const x = i % side;
             const y = Math.floor(i / side);
-            const c = palette[bitStream[i]];
-            ctx.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
-            ctx.fillRect(x,y,1,1);
-        }
-
-        //执行后期变换
-        const finalCanvas = postProcessImage(canvas);
-
-        const blob = await new Promise(res=>finalCanvas.toBlob(res,"image/png"));
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href=url;
-        a.download = file.name + (mode==="16"?".16color.png":".64color.png");
-        document.body.append
+            con
