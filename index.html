@@ -193,12 +193,14 @@ function clearPreview(){
 function toast(s, isWarn=false){
     msgEl.textContent = s;
     msgEl.className = isWarn ? "message warn" : "message info";
+    void msgEl.offsetHeight;
 }
 
+// inline WebWorker，不需要独立worker文件
+const workerCode = `
 const BLOCK_SIZE = 256;
 const IV_LEN = 16;
 const PWD_ITER = 8;
-const SIZE_LIMIT = 6 * 1024 * 1024;
 
 function getPasswordSeed(password){
     const arr = new Uint8Array(32);
@@ -330,9 +332,23 @@ async function customDecrypt(encTotalBytes, password){
     return out;
 }
 
-async function fileToArrayBuffer(file){
-    return await file.arrayBuffer();
-}
+self.onmessage = async (e)=>{
+    try{
+        if(e.data.type==="encrypt"){
+            const res = await customEncrypt(e.data.data, e.data.pwd, e.data.round);
+            self.postMessage({type:"encrypt-done", payload:res}, [res.buffer]);
+        }else if(e.data.type==="decrypt"){
+            const res = await customDecrypt(e.data.data, e.data.pwd);
+            self.postMessage({type:"decrypt-done", payload:res}, [res.buffer]);
+        }
+    }catch(err){
+        self.postMessage({type:"error", msg:err.message});
+    }
+};
+`;
+
+const workerBlob = new Blob([workerCode], {type:"application/javascript"});
+const worker = new Worker(URL.createObjectURL(workerBlob));
 
 async function binaryToPng(binData){
     const canvas = document.getElementById("workCanvas");
@@ -346,23 +362,4 @@ async function binaryToPng(binData){
     let bytePtr=0;
     for(let pixIdx=0;pixIdx<pix.length;pixIdx+=4){
         if(bytePtr>=binData.length){
-            pix[pixIdx]=0;pix[pixIdx+1]=0;pix[pixIdx+2]=0;pix[pixIdx+3]=255;
-            continue;
-        }
-        pix[pixIdx]=binData[bytePtr++];
-        pix[pixIdx+1] = bytePtr<binData.length?binData[bytePtr++]:0;
-        pix[pixIdx+2] = bytePtr<binData.length?binData[bytePtr++]:0;
-        pix[pixIdx+3]=255;
-    }
-    ctx.putImageData(imgData,0,0);
-    return new Promise(resolve=>canvas.toBlob(b=>resolve(b),"image/png"));
-}
-
-async function pngToBinary(pngFile){
-    const canvas = document.getElementById("workCanvas");
-    const ctx = canvas.getContext("2d");
-    const img = new Image();
-    await new Promise((res,rej)=>{
-        img.onload=res;
-        img.onerror=rej;
-        img.
+            pix[pixIdx]=0;pix[pixIdx+1]=0;pix[pixIdx+2]=0
