@@ -224,7 +224,7 @@ function toast(s, isWarn=false){
 
 const BLOCK_SIZE = 256;
 const IV_LEN = 16;
-const PWD_ITER = 128;
+const PWD_ITER = 24;
 const SIZE_LIMIT = 6 * 1024 * 1024;
 
 function passwordSeed(pass){
@@ -362,4 +362,4 @@ async function binaryToPng(binData){
     const ctx = canvas.getContext("2d");
     const totalPixel = Math.ceil(binData.length /3);
     const w = Math.ceil(Math.sqrt(totalPixel));
-    const h = Math.ceil(totalPixel /w
+    const h = Math.ceil(totalPixel /w)
