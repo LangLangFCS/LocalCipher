@@ -156,12 +156,26 @@ fileDec.onchange = function(){
     labDec.textContent = this.files.length? shortName(this.files[0].name):DEF_DEC;
 };
 
-//16色调色板 i:0‑15，R=i*16 G=0 B=0
+//16色彩色调色板，不再全红色
 function makePalette(){
-    const p = [];
-    for(let i=0;i<16;i++){
-        p.push({r:i*16, g:0, b:0});
-    }
+    const p = [
+        {r:  0, g:  0, b:  0}, //0 黑
+        {r:128, g:  0, b:  0}, //1 深红
+        {r:255, g:  0, b:  0}, //2 红
+        {r:255, g: 69, b:  0}, //3 橙红
+        {r:255, g:165, b:  0}, //4 橙
+        {r:255, g:255, b:  0}, //5 黄
+        {r:128, g:128, b:  0}, //6 橄榄绿
+        {r:  0, g:128, b:  0}, //7 深绿
+        {r:  0, g:255, b:  0}, //8 绿
+        {r:  0, g:128, b:128}, //9 青绿
+        {r:  0, g:255, b:255}, //10 青
+        {r:  0, g:  0, b:128}, //11 深蓝
+        {r:  0, g:  0, b:255}, //12 蓝
+        {r:128, g:  0, b:128}, //13 紫
+        {r:255, g:  0, b:255}, //14 品红
+        {r:255, g:255, b:255}  //15 白
+    ];
     return p;
 }
 const palette = makePalette();
